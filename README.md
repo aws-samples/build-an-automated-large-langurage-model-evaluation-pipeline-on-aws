@@ -1,11 +1,8 @@
-## My Project
+# Large Language model and prompt evaluation
 
-TODO: Fill this README out!
+## Architecture
 
-Be sure to:
-
-* Change the title in this README
-* Edit your repository description on GitHub
+![Architecture](Assets/eval-prompt-ops.png)
 
 ## Security
 
@@ -14,4 +11,3 @@ See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more inform
 ## License
 
 This library is licensed under the MIT-0 License. See the LICENSE file.
-
