@@ -1,0 +1,417 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: The model and prompt evaluation solution
+Parameters:
+  pCodeBucket:
+    Type: String
+    Description: The bucket for initial code repo.
+  pCodeKey:
+    Type: String
+    Description: The Object key for the code
+
+Resources:
+  EvaluationBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName:
+        Fn::Sub: 'llm-evaluation-result-${AWS::AccountId}-${AWS::Region}'
+  LLMRepo:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: LLM-Repo
+      RepositoryDescription: This is a repository for LLM evaluation.
+      Code:
+        BranchName: main
+        S3:
+          Bucket: !Ref pCodeBucket
+          Key: !Ref pCodeKey
+  LLMInvocationStatesExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - !Sub states.${AWS::Region}.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: LambdaExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "lambda:InvokeFunction"
+                # TODO: narrow down
+                Resource: "*"
+        - PolicyName: StatesLogPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogDelivery
+                  - logs:GetLogDelivery
+                  - logs:UpdateLogDelivery
+                  - logs:DeleteLogDelivery
+                  - logs:ListLogDeliveries
+                  - logs:PutResourcePolicy
+                  - logs:DeleteResourcePolicy
+                  - logs:DescribeResourcePolicies
+                  - logs:DescribeLogGroups
+                  - logs:CreateLogGroup
+                Resource: "*"
+        - PolicyName: CodecommitRole
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codecommit:GetFile
+                Resource: !GetAtt LLMRepo.Arn
+  InvokeLLMStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: Invoke-LLM
+      DefinitionString:
+        Fn::Sub:
+          - |-
+            {
+              "Comment": "Invoke LLM",
+              "StartAt": "GetPrompts",
+              "States": {
+                "GetPrompts": {
+                  "Type": "Task",
+                  "Parameters": {
+                    "FilePath": "evaluation_artifacts/evaluation_prompt.csv",
+                    "RepositoryName": "LLM-Repo"
+                  },
+                  "Resource": "arn:aws:states:::aws-sdk:codecommit:getFile",
+                  "ResultSelector": {
+                    "prompts.$": "$.FileContent"
+                  },
+                  "ResultPath": "$.prompts",
+                  "Next": "convert_to_json"
+                },
+                "convert_to_json": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "OutputPath": "$.Payload",
+                  "Parameters": {
+                    "FunctionName": "${ConvertToJsonLambdaArn}",
+                    "Payload": {
+                      "executionId.$": "$$.Execution.Id",
+                      "input.$": "$"
+                    }
+                  },
+                  "Retry": [
+                    {
+                      "ErrorEquals": [
+                        "Lambda.ServiceException",
+                        "Lambda.AWSLambdaException",
+                        "Lambda.SdkClientException",
+                        "Lambda.TooManyRequestsException"
+                      ],
+                      "IntervalSeconds": 1,
+                      "MaxAttempts": 3,
+                      "BackoffRate": 2
+                    }
+                  ],
+                  "Next": "Map"
+                },
+                "Map": {
+                  "Type": "Map",
+                  "ItemProcessor": {
+                    "ProcessorConfig": {
+                      "Mode": "INLINE"
+                    },
+                    "StartAt": "invoke_llm",
+                    "States": {
+                      "invoke_llm": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::lambda:invoke",
+                        "OutputPath": "$.Payload",
+                        "Parameters": {
+                          "Payload.$": "$",
+                          "FunctionName": "${InvokeLambdaArn}"
+                        },
+                        "Retry": [
+                          {
+                            "ErrorEquals": [
+                              "Lambda.ServiceException",
+                              "Lambda.AWSLambdaException",
+                              "Lambda.SdkClientException",
+                              "Lambda.TooManyRequestsException"
+                            ],
+                            "IntervalSeconds": 1,
+                            "MaxAttempts": 3,
+                            "BackoffRate": 2
+                          }
+                        ],
+                        "End": true
+                      }
+                    }
+                  },
+                  "ItemsPath": "$.result",
+                  "End": true
+                }
+              }
+            }
+          - {
+            InvokeLambdaArn: !GetAtt InvokeLLM.Arn,
+            ConvertToJsonLambdaArn: !GetAtt ConvertToJson.Arn
+          }
+      RoleArn: !GetAtt LLMInvocationStatesExecutionRole.Arn
+  LLMIEvaluationStatesExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - !Sub states.${AWS::Region}.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: LambdaExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "lambda:InvokeFunction"
+                # TODO: narrow down
+                Resource: "*"
+        - PolicyName: StatesLogPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogDelivery
+                  - logs:GetLogDelivery
+                  - logs:UpdateLogDelivery
+                  - logs:DeleteLogDelivery
+                  - logs:ListLogDeliveries
+                  - logs:PutResourcePolicy
+                  - logs:DeleteResourcePolicy
+                  - logs:DescribeResourcePolicies
+                  - logs:DescribeLogGroups
+                  - logs:CreateLogGroup
+                Resource: "*"
+  EvaluateLLMStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: Evaluate-LLM
+      DefinitionString:
+        Fn::Sub:
+          - |-
+            {
+              "Comment": "Invoke LLM state machine",
+              "StartAt": "validate_inputs",
+              "States": {
+                "validate_inputs": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "OutputPath": "$.Payload",
+                  "Parameters": {
+                    "Payload.$": "$",
+                    "FunctionName": "${ValidateInputLambdaArn}"
+                  },
+                  "Retry": [
+                    {
+                      "ErrorEquals": [
+                        "States.ALL"
+                      ],
+                      "IntervalSeconds": 1,
+                      "MaxAttempts": 3,
+                      "BackoffRate": 2
+                    }
+                  ],
+                  "Next": "Map"
+                },
+                "Map": {
+                  "Type": "Map",
+                  "ItemProcessor": {
+                    "ProcessorConfig": {
+                      "Mode": "INLINE"
+                    },
+                    "StartAt": "evaluate_llm",
+                    "States": {
+                      "evaluate_llm": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::lambda:invoke",
+                        "Parameters": {
+                          "FunctionName": "${EvaluateLLMArn}",
+                          "Payload": {
+                            "execution_id.$": "$$.Execution.Id",
+                            "input.$": "$"
+                          }
+                        },
+                        "Retry": [
+                          {
+                            "ErrorEquals": [
+                              "States.ALL"
+                            ],
+                            "IntervalSeconds": 1,
+                            "MaxAttempts": 3,
+                            "BackoffRate": 2
+                          }
+                        ],
+                        "End": true,
+                        "ResultSelector": {
+                          "result.$": "$.Payload"
+                        },
+                        "ResultPath": "$.result"
+                      }
+                    }
+                  },
+                  "ItemsPath": "$.result",
+                  "Next": "summarize_result"
+                },
+                "summarize_result": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "OutputPath": "$.Payload",
+                  "Parameters": {
+                    "Payload.$": "$",
+                    "FunctionName": "${EvaluateLLMSummaryArn}"
+                  },
+                  "Retry": [
+                    {
+                      "ErrorEquals": [
+                        "States.ALL"
+                      ],
+                      "IntervalSeconds": 1,
+                      "MaxAttempts": 3,
+                      "BackoffRate": 2
+                    }
+                  ],
+                  "End": true
+                }
+              }
+            }
+          - {
+            ValidateInputLambdaArn: !GetAtt ValidateLLMEvaluateInput.Arn,
+            EvaluateLLMArn: !GetAtt EvaluateLLM.Arn,
+            EvaluateLLMSummaryArn: !GetAtt EvaluationResultSummary.Arn
+          }
+      RoleArn: !GetAtt LLMIEvaluationStatesExecutionRole.Arn
+  InvokeLLM:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: invoke_llm_lambda
+      Handler: invoke_llm_handler.handler
+      Runtime: python3.9
+      CodeUri: ../
+      MemorySize: 1024
+      Timeout: 100
+      Environment:
+        Variables:
+          ResultBucket: !Sub '${EvaluationBucket}'
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:10
+      Policies:
+        - AWSLambdaExecute
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                # TODO narrow down
+                - s3:*
+                - bedrock:*
+                - sagemaker:*
+              Resource: "*"
+  EvaluateLLM:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: evaluate_llm_lambda
+      Handler: evaluate_llm_handler.handler
+      Runtime: python3.9
+      CodeUri: ../
+      MemorySize: 1024
+      Environment:
+        Variables:
+          ResultBucket: !Sub '${EvaluationBucket}'
+      Timeout: 100
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:10
+      Policies:
+        - AWSLambdaExecute
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                # TODO narrow down
+                - s3:*
+                - bedrock:*
+                - sagemaker:*
+              Resource: "*"
+  ConvertToJson:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: invoke_llm_convert_to_json
+      Handler: invoke_llm_convert_to_json.handler
+      Runtime: python3.9
+      CodeUri: ../
+      MemorySize: 1024
+      Timeout: 100
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:10
+      Policies:
+        - AWSLambdaExecute
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                # TODO narrow down
+                - s3:*
+                - bedrock:*
+                - sagemaker:*
+              Resource: "*"
+  ValidateLLMEvaluateInput:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: evaluate_llm_input_validation
+      Handler: evaluate_llm_input_validation.handler
+      Runtime: python3.9
+      CodeUri: ../
+      MemorySize: 1024
+      Timeout: 5
+      Policies:
+        - AWSLambdaExecute
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                # TODO narrow down
+                - s3:*
+              Resource: "*"
+  EvaluationResultSummary:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: evaluate_llm_result_summary
+      Handler: evaluate_llm_result_summary.handler
+      Runtime: python3.9
+      CodeUri: ../
+      MemorySize: 1024
+      Timeout: 30
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:10
+      Environment:
+        Variables:
+          ResultBucket: !Sub '${EvaluationBucket}'
+      Policies:
+        - AWSLambdaExecute
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                # TODO narrow down
+                - s3:*
+              Resource: "*"
