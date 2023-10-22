@@ -1,8 +1,12 @@
 from prompts.store import TemplateStore
+from handlers.utils.evaluation_util import EvaluationUtils
 import pandas as pd
 import boto3
 import random
 import os
+import logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 prompt_template_database = TemplateStore()
 
@@ -17,6 +21,7 @@ import time
 
 
 def handler(event, context):
+    logger.info(f"receiving event {event}")
     bucket_name = os.getenv("ResultBucket")
     # Add Prompt Template to the database.
     p_template = PromptTemplate(
@@ -37,88 +42,86 @@ Assistant: """,
     execution_id = event['execution_id'].split(":")[-1]
     event = event["input"]
 
-    eval_model = {
-        "model_family": event['model_family'],
-        "model_name": event['model_name']
-    }
+    logger.info(f"event input: {event}")
 
     metrics = event['evaluation_metrics']
 
-    QUESTIONS = [
-        {
-            "Question": "Is the above response based solely on the provided context? Answer with Yes or No only.",
-            "Weight": 20
-        },
-        {
-            "Question": "Based solely on the provided context, is the above response accurately answers the Inquiry? Answer with Yes or No only.",
-            "Weight": 20
-        },
-        {
-            "Question": "Is the above response short, compact and direct? Answer with Yes or No only.",
-            "Weight": 10
-        },
-        {
-            "Question": "The above response does not have any words that can be removed without imapcting its meaning, is that true? Answer with Yes or No only.",
-            "Weight": 10
-        },
-        {
-            "Question": "Is the above response an answer or a question? Answer only with Yes if it is an answer or No if it is a question.",
-            "Weight": 30
-        },
-        {
-            "Question": "The above response does not mention the word `context` in reference to the above provided context, is that true? Answer with Yes or No only.",
-            "Weight": 10
-        }
-    ]
+    evaluation_utils = EvaluationUtils("SolutionTableDDB")
 
-    metric_question_dict = {
-        "Sanity Check": [QUESTIONS[0]],
-        "Accuracy Check": [QUESTIONS[1]],
-        "Compact Check": [QUESTIONS[2]],
-        "Relevancy Check": [QUESTIONS[3]],
-        "Redundancy Check": [QUESTIONS[4]],
-        "Form Check": [QUESTIONS[5]],
-        "Weighted Score": QUESTIONS
-    }
+    simple_metrics = evaluation_utils.get_metric_names_by_type("Simple")
+    composed_metrics = evaluation_utils.get_metric_names_by_type("Composed")
+    similarity_metrics = evaluation_utils.get_metric_names_by_type("Similarity")
 
-    metrics_to_evaluate = [
-        {
-            "metric_name": metric,
-            "scoring_object": SurveyMetric(
-                model_family=event["model_family"],
-                model_name=event["model_name"],
-                prompt_template=p_template,
-                questions=metric_question_dict[metric]
-            )
-        } for metric in metrics if metric != "Cosine Metric"]
+    logger.info("adding simple metrics")
 
-    if "Cosine Metric" in metrics:
-        metrics_to_evaluate.append({
-            "metric_name": "Cosine Metric",
-            "scoring_object": CosineMetric(
-                model_family="bedrock",
-                model_name="amazon.titan-embed-text-v1"
-            )
-        })
+    metrics_to_evaluate = []
 
+    for metric in metrics:
+
+        if metric in simple_metrics:
+            logger.info(f"adding simple metric {metric}")
+            metrics_to_evaluate.append({
+                "metric_name": metric,
+                "scoring_object": SurveyMetric(
+                    model_family=event["model_family"],
+                    model_name=event["model_name"],
+                    prompt_template=p_template,
+                    questions=[evaluation_utils.get_question_by_simple_metric(metric)]
+                )
+            })
+
+        if metric in similarity_metrics:
+            logger.info(f"adding similarity metric {metric}")
+            # At the moment, we only support the cosine metric
+            metrics_to_evaluate.append({
+                "metric_name": "Cosine Metric",
+                "scoring_object": CosineMetric(
+                    model_family="bedrock",
+                    model_name="amazon.titan-embed-text-v1"
+                )
+            })
+
+        if metric in composed_metrics:
+            logger.info(f"adding composed metric {metric}")
+            metrics_to_evaluate.append({
+                "metric_name": metric,
+                "scoring_object": SurveyMetric(
+                    model_family=event["model_family"],
+                    model_name=event["model_name"],
+                    prompt_template=p_template,
+                    questions=evaluation_utils.get_question_by_composed_metric(metric)
+                )
+            })
+
+
+    logger.info("adding composed metrics")
+    # add composed metrics
+    print("TODO")
+
+
+
+    logger.info("begin evaluation")
     eval_data = []
     file_location = event['evaluation_location']
     model_family = event['model_family']
     model_name = event['model_name']
     dataset = wr.s3.read_csv(path=file_location, sep="|")
-    print(dataset.shape)
     for ind in dataset.index:
         evals = []
-        time.sleep(random.randint(0, 5))
         for metric_ in metrics_to_evaluate:
+            # as we use bedrock but it got throttled, we put some sleep time to reduce the tps
+            time.sleep(random.randint(0,5))
             metric = metric_["scoring_object"]
+            logger.info(f"evaluating metric {metric_['metric_name']}")
             if isinstance(metric, SurveyMetric):
+                logger.info("this is a survey metric")
                 param_values = {
                     "CONTEXT": f"{dataset['CONTEXT'][ind]}",
                     "INQUIRY": f"{dataset['QUESTION'][ind]}",
                     "RESPONSE": f"{dataset['Response'][ind]}"
                 }
             if isinstance(metric, CosineMetric):
+                logger.info("this is a cosine metric")
                 param_values = {
                     "text1": dataset["Response"][ind],
                     "text2": dataset["Expected Answer"][ind]

@@ -351,6 +351,8 @@ Resources:
                 - s3:*
                 - bedrock:*
                 - sagemaker:*
+                - dynamodb:GetItem
+                - dynamodb:Query
               Resource: "*"
   ConvertToJson:
     Type: AWS::Serverless::Function
@@ -370,10 +372,9 @@ Resources:
             - Effect: Allow
               Action:
                 # TODO narrow down
-                - s3:*
-                - bedrock:*
-                - sagemaker:*
+                - logs:*
               Resource: "*"
+
   ValidateLLMEvaluateInput:
     Type: AWS::Serverless::Function
     Properties:
@@ -391,7 +392,10 @@ Resources:
               Action:
                 # TODO narrow down
                 - s3:*
+                - dynamodb:GetItem
+                - dynamodb:Query
               Resource: "*"
+
   EvaluationResultSummary:
     Type: AWS::Serverless::Function
     Properties:
@@ -415,3 +419,26 @@ Resources:
                 # TODO narrow down
                 - s3:*
               Resource: "*"
+
+
+  SolutionTableDDB:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        -
+          AttributeName: "PK"
+          AttributeType: "S"
+        -
+          AttributeName: "SK"
+          AttributeType: "S"
+      KeySchema:
+        -
+          AttributeName: "PK"
+          KeyType: "HASH"
+        -
+          AttributeName: "SK"
+          KeyType: "RANGE"
+      ProvisionedThroughput:
+        ReadCapacityUnits: "5"
+        WriteCapacityUnits: "5"
+      TableName: "SolutionTableDDB"

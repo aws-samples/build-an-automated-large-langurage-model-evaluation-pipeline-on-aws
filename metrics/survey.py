@@ -37,7 +37,7 @@ class SurveyMetric(BaseMetric):
                 "Weight": weight
             }
         )
-        self.total_weight += weight
+        self.total_weight += int(weight)
         
     def add_questions(self, questions: List[Dict[str, int]]):
         for question in questions:
