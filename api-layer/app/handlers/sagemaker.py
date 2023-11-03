@@ -2,8 +2,9 @@ import os
 import io
 import json
 import boto3
-from handlers.base import BaseModel
+from handlers.base import BaseModel, table_name
 import logging as logger
+
 
 class StreamIterator:
     def __init__(self, stream):
@@ -33,6 +34,7 @@ class StreamIterator:
             self.buffer.seek(0, io.SEEK_END)
             self.buffer.write(chunk['PayloadPart']['Bytes'])
 
+
 class model(BaseModel):
     def __init__(self, model_name):
         super().__init__()
@@ -44,28 +46,32 @@ class model(BaseModel):
         self.invoke_api = self.sagemaker_client.invoke_endpoint
         self.invoke_api_with_response_stream = self.sagemaker_client.invoke_endpoint_with_response_stream
         self.stream_iter = StreamIterator
-        schema_path = f'handlers/schemas/sagemaker-{self.container_type}.json'
-        if os.path.exists(schema_path):
-            (
-                self.request_defaults,
-                self.request_mapping,
-                self.response_regex,
-                self.response_mapping,
-                self.response_stream_regex,
-                self.response_stream_mapping
-            ) = self.load_mappings(schema_path)
+        if table_name == "":
+            schema_path = f"handlers/schemas/sagemaker-{self.container_type}.json"
+            if not os.path.exists(schema_path):
+                raise NotImplementedError(
+                    f"Schema file {schema_path} not found or not implemented."
+                )
         else:
-            raise NotImplementedError(f"Schema file {schema_path} not found or not implemented.")
+            schema_path = f"sagemaker-{self.container_type}"
+        (
+            self.request_defaults,
+            self.request_mapping,
+            self.response_regex,
+            self.response_mapping,
+            self.response_stream_regex,
+            self.response_stream_mapping
+        ) = self.load_mappings(schema_path)
 
     def invoke(self, body):
         request_body = self.form_request(
-            body, 
-            self.request_defaults, 
+            body,
+            self.request_defaults,
             self.request_mapping
         )
         response = self.invoke_api(
             EndpointName=self.endpoint_name,
-            Body = json.dumps(request_body).encode("utf-8"),
+            Body=json.dumps(request_body).encode("utf-8"),
             ContentType="application/json"
         )
         res_body = response["Body"].read().decode("utf-8")
@@ -75,18 +81,18 @@ class model(BaseModel):
             self.response_regex
         )
         return res
-    
+
     def invoke_with_response_stream(self, body):
         try:
             body["stream"] = True
             request_body = self.form_request(
                 body, 
-                self.request_defaults, 
+                self.request_defaults,
                 self.request_mapping
             )
             response = self.invoke_api_with_response_stream(
                 EndpointName=self.endpoint_name,
-                Body = json.dumps(request_body).encode("utf-8"),
+                Body=json.dumps(request_body).encode("utf-8"),
                 ContentType="application/json"
             )
             for line in self.stream_iter(response["Body"]):

@@ -6,10 +6,11 @@ import boto3
 table_name = ""
 ddb_client = boto3.client("dynamodb")
 
+
 class BaseModel:
     def inovke_api(self):
         raise NotImplementedError("Not implemented in base model, make sure to override this method.")
-    
+
     def load_mappings(self, schema_path):
         mappings = {}
         if table_name == "":
@@ -17,15 +18,15 @@ class BaseModel:
                 mappings = json.load(schema_file)
         else:
             schema = ddb_client.get_item(
-            TableName=table_name,
-            Key={
-                    "model_id": {
-                        "S": schema_path
+                TableName=table_name,
+                Key={
+                        "model_id": {
+                            "S": schema_path
+                        }
                     }
-                }
-            )["Item"]["schema"]["S"]
+                )["Item"]["schema"]["S"]
             mappings = json.loads(schema)
-            
+
         return (
             mappings["request"]["defaults"],
             mappings["request"]["mapping"],
@@ -34,7 +35,7 @@ class BaseModel:
             mappings["response-with-stream"]["regex_sub"],
             mappings["response-with-stream"]["mapping"]
         )
-    
+
     def form_request(self, params, defaults, mapping):
         for attrib, jpath in mapping.items():
             if attrib in params.keys():
