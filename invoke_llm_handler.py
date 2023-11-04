@@ -8,6 +8,7 @@ prompt_template_database = TemplateStore()
 
 from importlib import import_module
 from prompts.template import PromptTemplate
+from llm_api.invoke_llm import get_llm_result
 
 
 def call_endpoint(payload):
@@ -68,7 +69,12 @@ Assistant:""",
         }
     }
 
-    answer = call_endpoint(payload)
+    prompt = prompt_template_database.get_prompt_from_template(
+        template_id=payload["template_id"],
+        param_values=payload["template_params"]
+    )
+
+    answer = get_llm_result(prompt, model_family, model_name)
     data = {'id': [prompts_list[0]], 'QUESTION': [prompts_list[1]], 'CONTEXT': [prompts_list[2]],
             'Expected Answer': [prompts_list[3]], 'Response': [answer]}
     df = pd.DataFrame(data)

@@ -1,12 +1,12 @@
 import boto3
+from handlers.utils.evaluation_util import EvaluationUtils
 
 s3_client = boto3.client('s3')
+evaluation_utils = EvaluationUtils("SolutionTableDDB")
 
 
 def handler(event, context):
-    # TODO: may get it from some storage
-    available_metrics = ["Sanity Check", "Accuracy Check", "Compact Check", "Relevancy Check", "Redundancy Check",
-                         "Form Check", "Cosine Metric"]
+    available_metrics = evaluation_utils.get_all_metrics()
     evaluation_metrics = event.get("metrics", [])
 
     if "evaluation_model_family" not in event:
