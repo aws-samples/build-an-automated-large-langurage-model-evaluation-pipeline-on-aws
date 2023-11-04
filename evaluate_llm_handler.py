@@ -94,12 +94,6 @@ Assistant: """,
             })
 
 
-    logger.info("adding composed metrics")
-    # add composed metrics
-    print("TODO")
-
-
-
     logger.info("begin evaluation")
     eval_data = []
     file_location = event['evaluation_location']

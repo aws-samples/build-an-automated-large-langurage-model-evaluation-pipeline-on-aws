@@ -5,6 +5,8 @@ from prompts.store import TemplateStore
 from importlib import import_module
 from log.logger import app_logger
 
+from llm_api.invoke_llm import get_llm_result
+
 template_id = "survey template"
 logger = app_logger()
 
@@ -54,7 +56,8 @@ class SurveyMetric(BaseMetric):
                 template_id=template_id,
                 param_values=param_values
             )
-            answer = self.handler(prompt)
+            logger.info(str(prompt))
+            answer = get_llm_result(str(prompt), self.model_family, self.model_name)
             if answer.strip(" ").lower() == "yes":
                     score += question["Weight"]
         return score / self.total_weight
