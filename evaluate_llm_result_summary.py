@@ -11,6 +11,8 @@ def list_to_dataframe(input_list, columns):
 
 
 def handler(event, context):
+    execution_id = event['executionId'].split(":")[-1]
+    event = event['input']
     if len(event) == 0:
         return "Nonthing"
     evaluation_metrics = event[0]['evaluation_metrics']
@@ -19,14 +21,14 @@ def handler(event, context):
 
     columns = ['ID', "Question", "Model"] + evaluation_metrics
 
-    input_list = [e['result']['result'] for e in event]
+    input_list = [e['result']['result'] for e in event if 'evaluation_metrics' in e]
     df = list_to_dataframe(input_list, columns)
     bucket_name = os.getenv("ResultBucket")
-    key = f"llm-response/mytesting/{model_family}-{model_name}.csv"
+    key = f"llm-response/{execution_id}/{model_family}-{model_name}.csv"
     wr.s3.to_csv(
         df=df,
         path=f"s3://{bucket_name}/{key}",
         index=False,
-        sep="|"
+        sep=","
     )
     return ["|".join(columns)] + input_list

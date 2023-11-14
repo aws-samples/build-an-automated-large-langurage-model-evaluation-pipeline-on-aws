@@ -12,6 +12,10 @@ Parameters:
     MinLength: '1'
     Type: String
     Default: LLM-Eval
+  ECSClusterName:
+    Type: String
+    Description: Specifies the ECS Cluster Name with which the resources would be associated
+    Default: llm-eval-api-cluster
   pCodeBucket:
     Type: String
     Description: The bucket for initial code repo.
@@ -161,6 +165,216 @@ Resources:
       GroupId: !Ref SecurityGroup
       SourceSecurityGroupId: !Ref SecurityGroup
 
+  LLMInternalALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: LLM-API-Layer
+      Scheme: internal
+      SecurityGroups:
+        - !Ref SecurityGroup
+      Subnets:
+        # private subnet
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+
+  #ECS based LLM invoke service
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName:
+        Ref: ECSClusterName
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      ClusterSettings:
+        - Name: containerInsights
+          Value: disabled
+      Configuration:
+        ExecuteCommandConfiguration:
+          Logging: DEFAULT
+      ServiceConnectDefaults:
+        Namespace: llm-eval-api-layer
+      Tags: [ ]
+
+  LLMTaskDefination:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: "ApiLayerDefinition"
+      # awsvpc is required for Fargate
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: 1024
+      Memory: 8GB
+      ExecutionRoleArn: !Ref ExecutionRole
+      TaskRoleArn: !Ref TaskRole
+      ContainerDefinitions:
+        - Name: api-layer
+          Environment:
+            - Name: AWS_DEFAULT_REGION
+              Value: "us-west-2"
+            - Name: AWS_REGION
+              Value: "us-west-2"
+          Image: "705484421587.dkr.ecr.us-west-2.amazonaws.com/api-layer:latest"
+          Command:
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8001"
+            - "--table-name"
+            - "api-layer-ddb"
+          PortMappings:
+            - ContainerPort: 8001
+              HostPort: 8001
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Ref LogGroup
+              awslogs-stream-prefix: ecs
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ['', [/ecs/, !Ref ProjectName,/, FastChatDefinition]]
+  # A role needed by ECS
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join [ '', [ !Ref ProjectName, ExecutionRole ] ]
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+  # A role for the containers
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join [ '', [ !Ref ProjectName, TaskRole ] ]
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: "SageMakerInvokePermissions"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "sagemaker:InvokeEndpoint"
+                  - "s3:*"
+                  - "dynamodb:GetItem"
+                  - "bedrock:*"
+                Resource: "*"
+  ECSService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref LLMTaskDefination
+      LaunchType: FARGATE
+      ServiceName: LLM-Invoke_API
+      SchedulingStrategy: REPLICA
+      DesiredCount: 2
+      LoadBalancers:
+      - ContainerName: api-layer
+        ContainerPort: 8001
+        LoadBalancerName:
+          Ref: AWS::NoValue
+        TargetGroupArn:
+          Ref: TargetGroup
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !Ref SecurityGroup
+          Subnets:
+            - !Ref PrivateSubnetA
+            - !Ref PrivateSubnetB
+      PlatformVersion: LATEST
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      DeploymentController:
+        Type: ECS
+      ServiceConnectConfiguration:
+        Enabled: false
+      Tags: []
+      EnableECSManagedTags: true
+    DependsOn:
+    - Listener
+
+  #IAM role for auto scaling
+  AutoScalingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ['', [!Ref ECSClusterName, "AutoScalingRole"]]
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceAutoscaleRole'
+
+  AutoScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: '5'
+      MinCapacity: '2'
+      ResourceId: !Sub "service/${ECSClusterName}/LLM-Invoke_API"
+      RoleARN: !GetAtt AutoScalingRole.Arn
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+    DependsOn:
+      - ECSService
+
+  AutoScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: LLMInvoke
+      PolicyType: TargetTrackingScaling
+      ResourceId: !Sub "service/${ECSClusterName}/LLM-Invoke_API"
+      ScalingTargetId:
+        Ref: AutoScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        DisableScaleIn: false
+        ScaleInCooldown: '100'
+        ScaleOutCooldown: '100'
+        TargetValue: '70'
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckPath: "/ping"
+      Name: LLMInvokeTG
+      Port: 80
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckProtocol: HTTP
+      VpcId: !Ref VPC
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn:
+          Ref: TargetGroup
+      LoadBalancerArn: !Ref LLMInternalALB
+      Port: '8001'
+      Protocol: HTTP
+
   EvaluationBucket:
     Type: 'AWS::S3::Bucket'
     Properties:
@@ -292,22 +506,31 @@ Resources:
                         "Retry": [
                           {
                             "ErrorEquals": [
-                              "Lambda.ServiceException",
-                              "Lambda.AWSLambdaException",
-                              "Lambda.SdkClientException",
-                              "Lambda.TooManyRequestsException"
+                              "States.ALL"
                             ],
                             "IntervalSeconds": 1,
                             "MaxAttempts": 3,
                             "BackoffRate": 2
                           }
                         ],
+                        "Catch": [
+                          {
+                            "ErrorEquals": [
+                              "States.ALL"
+                            ],
+                            "Next": "NoResult"
+                          }
+                        ],
                         "End": true
+                      },
+                      "NoResult": {
+                        "Type": "Succeed"
                       }
                     }
                   },
                   "ItemsPath": "$.result",
-                  "End": true
+                  "End": true,
+                  "MaxConcurrency": 20
                 }
               }
             }
@@ -414,23 +637,38 @@ Resources:
                             "BackoffRate": 2
                           }
                         ],
+                        "Catch": [
+                          {
+                            "ErrorEquals": [
+                              "States.ALL"
+                            ],
+                            "Next": "NoResult"
+                          }
+                        ],
                         "End": true,
                         "ResultSelector": {
                           "result.$": "$.Payload"
                         },
                         "ResultPath": "$.result"
+                      },
+                      "NoResult": {
+                        "Type": "Succeed"
                       }
                     }
                   },
                   "ItemsPath": "$.result",
-                  "Next": "summarize_result"
+                  "Next": "summarize_result",
+                  "MaxConcurrency": 10
                 },
                 "summarize_result": {
                   "Type": "Task",
                   "Resource": "arn:aws:states:::lambda:invoke",
                   "OutputPath": "$.Payload",
                   "Parameters": {
-                    "Payload.$": "$",
+                    "Payload": {
+                      "executionId.$": "$$.Execution.Id",
+                      "input.$": "$"
+                    },
                     "FunctionName": "${EvaluateLLMSummaryArn}"
                   },
                   "Retry": [
@@ -471,6 +709,7 @@ Resources:
       Environment:
         Variables:
           ResultBucket: !Sub '${EvaluationBucket}'
+          LLMEndpoint: !Sub "http://${LLMInternalALB.DNSName}:8001/invoke"
       Layers:
         - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:10
       Policies:
@@ -501,6 +740,7 @@ Resources:
       Environment:
         Variables:
           ResultBucket: !Sub '${EvaluationBucket}'
+          LLMEndpoint: !Sub "http://${LLMInternalALB.DNSName}:8001/invoke"
       Timeout: 200
       Layers:
         - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:10
