@@ -437,6 +437,15 @@ Resources:
                 Action:
                   - codecommit:GetFile
                 Resource: !GetAtt LLMRepo.Arn
+        - PolicyName: S3Permission
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:*Object
+                Resource:
+                  - !Sub  "arn:aws:s3:::${EvaluationBucket}/*"
   InvokeLLMStateMachine:
     Type: AWS::StepFunctions::StateMachine
     Properties:
@@ -451,12 +460,12 @@ Resources:
                 "GetPrompts": {
                   "Type": "Task",
                   "Parameters": {
-                    "FilePath": "evaluation_artifacts/evaluation_prompt.csv",
-                    "RepositoryName": "LLM-Repo"
+                    "Bucket": "llm-evaluation-result-705484421587-us-west-2",
+                    "Key": "original-questions/evaluation_prompt-questions.csv"
                   },
-                  "Resource": "arn:aws:states:::aws-sdk:codecommit:getFile",
+                  "Resource": "arn:aws:states:::aws-sdk:s3:getObject",
                   "ResultSelector": {
-                    "prompts.$": "$.FileContent"
+                    "prompts.$": "$.Body"
                   },
                   "ResultPath": "$.prompts",
                   "Next": "convert_to_json"
@@ -508,9 +517,9 @@ Resources:
                             "ErrorEquals": [
                               "States.ALL"
                             ],
-                            "IntervalSeconds": 1,
-                            "MaxAttempts": 3,
-                            "BackoffRate": 2
+                            "IntervalSeconds": 5,
+                            "MaxAttempts": 1,
+                            "BackoffRate": 5
                           }
                         ],
                         "Catch": [
@@ -530,7 +539,7 @@ Resources:
                   },
                   "ItemsPath": "$.result",
                   "End": true,
-                  "MaxConcurrency": 20
+                  "MaxConcurrency": 100
                 }
               }
             }
