@@ -16,12 +16,6 @@ Parameters:
     Type: String
     Description: Specifies the ECS Cluster Name with which the resources would be associated
     Default: llm-eval-api-cluster
-  pCodeBucket:
-    Type: String
-    Description: The bucket for initial code repo.
-  pCodeKey:
-    Type: String
-    Description: The Object key for the code
   VpcCIDR:
     Type: String
     Default: 10.2.0.0/16
@@ -380,16 +374,6 @@ Resources:
     Properties:
       BucketName:
         Fn::Sub: 'llm-evaluation-result-${AWS::AccountId}-${AWS::Region}'
-  LLMRepo:
-    Type: AWS::CodeCommit::Repository
-    Properties:
-      RepositoryName: LLM-Repo
-      RepositoryDescription: This is a repository for LLM evaluation.
-      Code:
-        BranchName: main
-        S3:
-          Bucket: !Ref pCodeBucket
-          Key: !Ref pCodeKey
   LLMInvocationStatesExecutionRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -429,14 +413,6 @@ Resources:
                   - logs:DescribeLogGroups
                   - logs:CreateLogGroup
                 Resource: "*"
-        - PolicyName: CodecommitRole
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - codecommit:GetFile
-                Resource: !GetAtt LLMRepo.Arn
         - PolicyName: S3Permission
           PolicyDocument:
             Version: "2012-10-17"
@@ -460,8 +436,8 @@ Resources:
                 "GetPrompts": {
                   "Type": "Task",
                   "Parameters": {
-                    "Bucket": "llm-evaluation-result-705484421587-us-west-2",
-                    "Key": "original-questions/evaluation_prompt-questions.csv"
+                    "Bucket.$": "$.question_bucket",
+                    "Key.$": "$.question_key"
                   },
                   "Resource": "arn:aws:states:::aws-sdk:s3:getObject",
                   "ResultSelector": {
@@ -517,9 +493,9 @@ Resources:
                             "ErrorEquals": [
                               "States.ALL"
                             ],
-                            "IntervalSeconds": 5,
+                            "IntervalSeconds": 1,
                             "MaxAttempts": 1,
-                            "BackoffRate": 5
+                            "BackoffRate": 2
                           }
                         ],
                         "Catch": [
@@ -527,7 +503,8 @@ Resources:
                             "ErrorEquals": [
                               "States.ALL"
                             ],
-                            "Next": "NoResult"
+                            "Next": "NoResult",
+                            "ResultPath": null
                           }
                         ],
                         "End": true
@@ -538,14 +515,38 @@ Resources:
                     }
                   },
                   "ItemsPath": "$.result",
-                  "End": true,
-                  "MaxConcurrency": 100
+                  "MaxConcurrency": 10,
+                  "Next": "InvokeSummary"
+                },
+                "InvokeSummary": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "OutputPath": "$.Payload",
+                  "Parameters": {
+                    "Payload.$": "$",
+                    "FunctionName": "${InvokeSummaryLambdaArn}"
+                  },
+                  "Retry": [
+                    {
+                      "ErrorEquals": [
+                        "Lambda.ServiceException",
+                        "Lambda.AWSLambdaException",
+                        "Lambda.SdkClientException",
+                        "Lambda.TooManyRequestsException"
+                      ],
+                      "IntervalSeconds": 1,
+                      "MaxAttempts": 3,
+                      "BackoffRate": 2
+                    }
+                  ],
+                  "End": true
                 }
               }
             }
           - {
             InvokeLambdaArn: !GetAtt InvokeLLM.Arn,
-            ConvertToJsonLambdaArn: !GetAtt ConvertToJson.Arn
+            ConvertToJsonLambdaArn: !GetAtt ConvertToJson.Arn,
+            InvokeSummaryLambdaArn: !GetAtt InvokeResultSummary.Arn
           }
       RoleArn: !GetAtt LLMInvocationStatesExecutionRole.Arn
   LLMIEvaluationStatesExecutionRole:
@@ -732,6 +733,30 @@ Resources:
                 - bedrock:*
                 - sagemaker:*
               Resource: "*"
+  InvokeResultSummary:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: invoke_llm_result_summary
+      Handler: invoke_llm_result_summary.handler
+      Runtime: python3.9
+      CodeUri: ../
+      MemorySize: 1024
+      Timeout: 30
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:10
+      Environment:
+        Variables:
+          ResultBucket: !Sub '${EvaluationBucket}'
+      Policies:
+        - AWSLambdaExecute
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                # TODO narrow down
+                - s3:*
+              Resource: "*"
+
   EvaluateLLM:
     Type: AWS::Serverless::Function
     Properties:
