@@ -28,40 +28,35 @@ def handler(event, context):
 
     s3_location = event["evaluation_location"]
 
-    bucket, prefix = parse_s3_location(s3_location)
-    s3_path = handle_s3_path(s3_client, bucket, prefix)
+    bucket, key = parse_s3_location(s3_location)
+    if not object_exists(s3_client, bucket, key):
+        raise Exception("evaluation_location does not exist")
+    json_lines = parse_s3_jsonl_object(s3_client, bucket, key)
     result = [{"evaluation_metrics": evaluation_metrics, "model_family": event['evaluation_model_family'],
-               "model_name": event['evaluation_model_name'], "evaluation_location": s3_location} for s3_location in
-              s3_path]
+               "model_name": event['evaluation_model_name'], "evaluation_question_answer": eachline} for eachline in
+              json_lines]
 
     return {"result": result}
 
 
 def parse_s3_location(location):
     """Parse s3 URL into bucket and prefix."""
+    print(location)
     if not location.startswith("s3://"):
         raise ValueError("Invalid S3 URL")
 
     path_parts = location[5:].split("/", 1)  # strip off 's3://' and split by the first /
     bucket = path_parts[0]
-    prefix = ""
-    if len(path_parts) > 1:
-        prefix = path_parts[1]
+
+    if len(path_parts) == 1:
+        raise Exception("Invalid S3 URL")
+    prefix = path_parts[1]
+
+    if not prefix.endswith(".jsonl"):
+        raise Exception("Invalid S3 URL")
+
+
     return bucket, prefix
-
-
-def handle_s3_path(s3_client, bucket, prefix):
-    # Check if an object with the specified key exists
-    if object_exists(s3_client, bucket, prefix):
-        # It's an object, return object location
-        return [f's3://{bucket}/{prefix}']
-    else:
-        # Assume it's a folder (even without a trailing slash), list objects inside
-        objects_in_folder = list_objects(s3_client, bucket, prefix)
-        if objects_in_folder:
-            return objects_in_folder
-        else:
-            raise Exception("Invalid S3 Path")
 
 
 def object_exists(s3_client, bucket, key):
@@ -72,17 +67,18 @@ def object_exists(s3_client, bucket, key):
     except s3_client.exceptions.ClientError as e:
         return False
 
+# given the bucket and key which is a jsonl file, return a list of jsonl content
+def parse_s3_jsonl_object(s3_cleint, bucket_name, object_key):
 
-def list_objects(s3_client, bucket, prefix):
-    """List objects in folder"""
-    response = s3_client.list_objects_v2(
-        Bucket=bucket,
-        Prefix=prefix
-    )
+    try:
+        response = s3_cleint.get_object(Bucket=bucket_name, Key=object_key)
+        content = response['Body'].read().decode('utf-8')
 
-    objects = []
-    if 'Contents' in response:
-        for obj in response['Contents']:
-            objects.append(f"s3://{bucket}/{obj['Key']}")
+        # Split the content into lines and return as a list
+        json_lines = content.split('\n')
+        return json_lines
 
-    return objects
+    except Exception as e:
+        print(f"Error reading S3 object: {e}")
+        return []
+
