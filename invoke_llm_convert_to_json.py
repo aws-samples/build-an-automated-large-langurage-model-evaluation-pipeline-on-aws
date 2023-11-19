@@ -3,7 +3,7 @@ def handler(event, context):
     execution_id = event['executionId'].split(":")[-1]
     payload = event['input']
     # Fetch the multiline string from the incoming event data
-    multiline_string = payload.get('prompts', '').get("prompts", '')
+    multiline_string = payload.get('prompts', '').get("prompts", '').strip()
     model_name = payload.get("model_name")
     model_family = payload.get("model_family")
 
