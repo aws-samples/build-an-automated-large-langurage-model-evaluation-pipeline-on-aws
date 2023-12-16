@@ -48,3 +48,10 @@ class EvaluationUtils:
         return result
 
 
+    def get_fmeval_metric(self):
+        response = self.table.query(
+            KeyConditionExpression=Key('PK').eq('FMEVALMetric')
+        )
+
+        items = response['Items']
+        return [item['SK'] for item in items]

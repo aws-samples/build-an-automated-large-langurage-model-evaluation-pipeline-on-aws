@@ -759,7 +759,7 @@ Resources:
             ValidateInputLambdaArn: !GetAtt ValidateLLMEvaluateInput.Arn,
             EvaluateLLMArn: !GetAtt EvaluateLLM.Arn,
             EvaluateLLMSummaryArn: !GetAtt EvaluationResultSummary.Arn,
-            EvaluateMetricArn: !GetAtt EvaluateMetric.Arn
+            EvaluateMetricArn: !GetAtt FMEvalValidationInput.Arn
           }
       RoleArn: !GetAtt LLMIEvaluationStatesExecutionRole.Arn
   InvokeLLM:
@@ -908,6 +908,27 @@ Resources:
     Properties:
       FunctionName: evaluate_llm_input_validation
       Handler: evaluate_llm_input_validation.handler
+      Runtime: python3.9
+      CodeUri: ../
+      MemorySize: 1024
+      Timeout: 5
+      Policies:
+        - AWSLambdaExecute
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                # TODO narrow down
+                - s3:*
+                - dynamodb:GetItem
+                - dynamodb:Query
+              Resource: "*"
+
+  FMEvalValidationInput:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: fmeval_input_validation
+      Handler: fmeval_input_validation.handler
       Runtime: python3.9
       CodeUri: ../
       MemorySize: 1024
