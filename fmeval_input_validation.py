@@ -6,14 +6,8 @@ evaluation_utils = EvaluationUtils("SolutionTableDDB")
 
 
 def handler(event, context):
-    available_metrics = evaluation_utils.get_all_metrics()
+    available_metrics = evaluation_utils.get_fmeval_metric()
     evaluation_metrics = event.get("metrics", [])
-
-    if "evaluation_model_family" not in event:
-        raise Exception("no evaluation_model_family in event")
-
-    if "evaluation_model_name" not in event:
-        raise Exception("no evaluation_model_name in event")
 
     for metric in evaluation_metrics:
         if metric not in available_metrics:
@@ -28,15 +22,16 @@ def handler(event, context):
 
     s3_location = event["evaluation_location"]
 
+
     bucket, key = parse_s3_location(s3_location)
     if not object_exists(s3_client, bucket, key):
         raise Exception("evaluation_location does not exist")
-    json_lines = parse_s3_jsonl_object(s3_client, bucket, key)
-    result = [{"evaluation_metrics": evaluation_metrics, "model_family": event['evaluation_model_family'],
-               "model_name": event['evaluation_model_name'], "evaluation_question_answer": eachline} for eachline in
-              json_lines]
 
-    return {"result": result}
+    if not "instance_type" in event:
+        raise Exception("instance_type is required")
+    instance_type = event["instance_type"]
+
+    return {"result": [{"metric": metric, "evaluation_location": s3_location, "instance_type": instance_type} for metric in evaluation_metrics]}
 
 
 def parse_s3_location(location):
@@ -66,20 +61,4 @@ def object_exists(s3_client, bucket, key):
         return True
     except s3_client.exceptions.ClientError as e:
         return False
-
-# given the bucket and key which is a jsonl file, return a list of jsonl content
-def parse_s3_jsonl_object(s3_cleint, bucket_name, object_key):
-
-    try:
-        response = s3_cleint.get_object(Bucket=bucket_name, Key=object_key)
-        content = response['Body'].read().decode('utf-8')
-        # replace " with ' in content
-        content = content.replace('"', "'")
-        # Split the content into lines and return as a list
-        json_lines = content.split('\n')
-        return json_lines
-
-    except Exception as e:
-        print(f"Error reading S3 object: {e}")
-        return []
 

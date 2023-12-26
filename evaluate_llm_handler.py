@@ -2,6 +2,7 @@ from prompts.store import TemplateStore
 from handlers.utils.evaluation_util import EvaluationUtils
 import pandas as pd
 import boto3
+import json
 import random
 import os
 import logging
@@ -96,46 +97,45 @@ Assistant: """,
 
     logger.info("begin evaluation")
     eval_data = []
-    file_location = event['evaluation_location']
+    question_answer = event['evaluation_question_answer'].replace("'",'"')
     model_family = event['model_family']
     model_name = event['model_name']
-    dataset = wr.s3.read_csv(path=file_location, sep="|")
-    for ind in dataset.index:
-        evals = []
-        for metric_ in metrics_to_evaluate:
-            # as we use bedrock but it got throttled, we put some sleep time to reduce the tps
-            time.sleep(random.randint(0,5))
-            metric = metric_["scoring_object"]
-            logger.info(f"evaluating metric {metric_['metric_name']}")
-            if isinstance(metric, SurveyMetric):
-                logger.info("this is a survey metric")
-                param_values = {
-                    "CONTEXT": f"{dataset['CONTEXT'][ind]}",
-                    "INQUIRY": f"{dataset['QUESTION'][ind]}",
-                    "RESPONSE": f"{dataset['Response'][ind]}"
-                }
-            if isinstance(metric, CosineMetric):
-                logger.info("this is a cosine metric")
-                param_values = {
-                    "text1": dataset["Response"][ind],
-                    "text2": dataset["Expected Answer"][ind]
-                }
-            score = metric.score(param_values=param_values)
-            evals.append({"Key": metric_["metric_name"], "Value": score})
-        eval_data.append(
-            {
-                "id": dataset["id"][ind],
-                "QUESTION": dataset["QUESTION"][ind],
-                # "CONTEXT": dataset["CONTEXT"][ind],
-                # "Expected Answer": dataset["Expected Answer"][ind],
-                # "Response": dataset["Response"][ind],
-                "EVAL_MODEL": f'{model_family}~{model_name}'
-            }
-        )
-        for _eval in evals:
-            eval_data[-1][_eval["Key"]] = _eval["Value"]
-    eval_dataset = pd.DataFrame(eval_data)
 
+    dataset = json.loads(question_answer)
+    evals = []
+    for metric_ in metrics_to_evaluate:
+        # as we use bedrock but it got throttled, we put some sleep time to reduce the tps
+        time.sleep(random.randint(0,5))
+        metric = metric_["scoring_object"]
+        logger.info(f"evaluating metric {metric_['metric_name']}")
+        if isinstance(metric, SurveyMetric):
+            logger.info("this is a survey metric")
+            param_values = {
+                "CONTEXT": dataset['CONTEXT'],
+                "INQUIRY": dataset['QUESTION'],
+                "RESPONSE": dataset['Response']
+            }
+        if isinstance(metric, CosineMetric):
+            logger.info("this is a cosine metric")
+            param_values = {
+                "text1": dataset["Response"],
+                "text2": dataset["ExpectedAnswer"]
+            }
+        score = metric.score(param_values=param_values)
+        evals.append({"Key": metric_["metric_name"], "Value": score})
+    eval_data.append(
+        {
+            "id": dataset["id"],
+            "QUESTION": dataset["QUESTION"],
+            # "CONTEXT": dataset["CONTEXT"][ind],
+            # "Expected Answer": dataset["Expected Answer"][ind],
+            # "Response": dataset["Response"][ind],
+            "EVAL_MODEL": f'{model_family}~{model_name}'
+        }
+    )
+    for _eval in evals:
+        eval_data[-1][_eval["Key"]] = _eval["Value"]
+    eval_dataset = pd.DataFrame(eval_data)
     output_string = eval_dataset.to_csv(sep='|', index=False, header=False)
     key = f"llm-evaluation/{execution_id}/{model_family}-{model_name}.csv"
     return output_string

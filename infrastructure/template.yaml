@@ -31,6 +31,13 @@ Parameters:
   PrivateSubnetCIDRB:
     Type: String
     Default: 10.2.3.0/24
+  TrainingURL:
+    Type: String
+    Description: the training image
+  MetricPrefix:
+    Type: String
+    Default: fmeval
+
 
 Resources:
   # VPC relates resources
@@ -243,6 +250,20 @@ Resources:
             Action: 'sts:AssumeRole'
       ManagedPolicyArns:
         - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+
+  SageMakerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join [ '', [ !Ref ProjectName, SagemakerRole ] ]
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: sagemaker.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        # TODO narrow down
+        - 'arn:aws:iam::aws:policy/AdministratorAccess'
   # A role for the containers
   TaskRole:
     Type: AWS::IAM::Role
@@ -596,109 +617,186 @@ Resources:
         Fn::Sub:
           - |-
             {
-              "Comment": "Invoke LLM state machine",
-              "StartAt": "validate_inputs",
-              "States": {
-                "validate_inputs": {
-                  "Type": "Task",
-                  "Resource": "arn:aws:states:::lambda:invoke",
-                  "OutputPath": "$.Payload",
-                  "Parameters": {
-                    "Payload.$": "$",
-                    "FunctionName": "${ValidateInputLambdaArn}"
-                  },
-                  "Retry": [
-                    {
-                      "ErrorEquals": [
-                        "States.ALL"
-                      ],
-                      "IntervalSeconds": 1,
-                      "MaxAttempts": 3,
-                      "BackoffRate": 2
-                    }
-                  ],
-                  "Next": "Map"
-                },
-                "Map": {
-                  "Type": "Map",
-                  "ItemProcessor": {
-                    "ProcessorConfig": {
-                      "Mode": "INLINE"
-                    },
-                    "StartAt": "evaluate_llm",
-                    "States": {
-                      "evaluate_llm": {
-                        "Type": "Task",
-                        "Resource": "arn:aws:states:::lambda:invoke",
-                        "Parameters": {
-                          "FunctionName": "${EvaluateLLMArn}",
-                          "Payload": {
-                            "execution_id.$": "$$.Execution.Id",
-                            "input.$": "$"
-                          }
+               "Comment":"Evaluate state machine",
+               "StartAt":"evaluate",
+               "States":{
+                  "evaluate":{
+                     "Type":"Parallel",
+                     "Branches":[
+                        {
+                           "StartAt":"validate_inputs",
+                           "States":{
+                              "validate_inputs":{
+                                 "Type":"Task",
+                                 "Resource":"arn:aws:states:::lambda:invoke",
+                                 "OutputPath":"$.Payload",
+                                 "Parameters":{
+                                    "Payload.$":"$",
+                                    "FunctionName":"${ValidateInputLambdaArn}"
+                                 },
+                                 "Retry":[
+                                    {
+                                       "ErrorEquals":[
+                                          "States.ALL"
+                                       ],
+                                       "IntervalSeconds":1,
+                                       "MaxAttempts":3,
+                                       "BackoffRate":2
+                                    }
+                                 ],
+                                 "Next":"LLMEvalMap"
+                              },
+                              "LLMEvalMap":{
+                                 "Type":"Map",
+                                 "ItemProcessor":{
+                                    "ProcessorConfig":{
+                                       "Mode":"INLINE"
+                                    },
+                                    "StartAt":"evaluate_llm",
+                                    "States":{
+                                       "evaluate_llm":{
+                                          "Type":"Task",
+                                          "Resource":"arn:aws:states:::lambda:invoke",
+                                          "Parameters":{
+                                             "FunctionName":"${EvaluateLLMArn}",
+                                             "Payload":{
+                                                "execution_id.$":"$$.Execution.Id",
+                                                "input.$":"$"
+                                             }
+                                          },
+                                          "Retry":[
+                                             {
+                                                "ErrorEquals":[
+                                                   "States.ALL"
+                                                ],
+                                                "IntervalSeconds":1,
+                                                "MaxAttempts":3,
+                                                "BackoffRate":2
+                                             }
+                                          ],
+                                          "Catch":[
+                                             {
+                                                "ErrorEquals":[
+                                                   "States.ALL"
+                                                ],
+                                                "Next":"NoResult"
+                                             }
+                                          ],
+                                          "End":true,
+                                          "ResultSelector":{
+                                             "result.$":"$.Payload"
+                                          },
+                                          "ResultPath":"$.result"
+                                       },
+                                       "NoResult":{
+                                          "Type":"Succeed"
+                                       }
+                                    }
+                                 },
+                                 "ItemsPath":"$.result",
+                                 "Next":"summarize_result",
+                                 "MaxConcurrency":10
+                              },
+                              "summarize_result":{
+                                 "Type":"Task",
+                                 "Resource":"arn:aws:states:::lambda:invoke",
+                                 "OutputPath":"$.Payload",
+                                 "Parameters":{
+                                    "Payload":{
+                                       "executionId.$":"$$.Execution.Id",
+                                       "input.$":"$"
+                                    },
+                                    "FunctionName":"${EvaluateLLMSummaryArn}"
+                                 },
+                                 "Retry":[
+                                    {
+                                       "ErrorEquals":[
+                                          "States.ALL"
+                                       ],
+                                       "IntervalSeconds":1,
+                                       "MaxAttempts":3,
+                                       "BackoffRate":2
+                                    }
+                                 ],
+                                 "End":true
+                              }
+                           }
                         },
-                        "Retry": [
-                          {
-                            "ErrorEquals": [
-                              "States.ALL"
-                            ],
-                            "IntervalSeconds": 1,
-                            "MaxAttempts": 3,
-                            "BackoffRate": 2
-                          }
-                        ],
-                        "Catch": [
-                          {
-                            "ErrorEquals": [
-                              "States.ALL"
-                            ],
-                            "Next": "NoResult"
-                          }
-                        ],
-                        "End": true,
-                        "ResultSelector": {
-                          "result.$": "$.Payload"
-                        },
-                        "ResultPath": "$.result"
-                      },
-                      "NoResult": {
-                        "Type": "Succeed"
-                      }
-                    }
-                  },
-                  "ItemsPath": "$.result",
-                  "Next": "summarize_result",
-                  "MaxConcurrency": 10
-                },
-                "summarize_result": {
-                  "Type": "Task",
-                  "Resource": "arn:aws:states:::lambda:invoke",
-                  "OutputPath": "$.Payload",
-                  "Parameters": {
-                    "Payload": {
-                      "executionId.$": "$$.Execution.Id",
-                      "input.$": "$"
-                    },
-                    "FunctionName": "${EvaluateLLMSummaryArn}"
-                  },
-                  "Retry": [
-                    {
-                      "ErrorEquals": [
-                        "States.ALL"
-                      ],
-                      "IntervalSeconds": 1,
-                      "MaxAttempts": 3,
-                      "BackoffRate": 2
-                    }
-                  ],
-                  "End": true
-                }
-              }
+                        {
+                           "StartAt":"FMEval_metric_input",
+                           "States":{
+                              "FMEval_metric_input":{
+                                 "Type":"Task",
+                                 "Resource":"arn:aws:states:::lambda:invoke",
+                                 "OutputPath":"$.Payload",
+                                 "Parameters":{
+                                    "Payload.$":"$",
+                                    "FunctionName":"${FMEvalValidationInputArn}"
+                                 },
+                                 "Retry":[
+                                    {
+                                       "ErrorEquals":[
+                                          "Lambda.ServiceException",
+                                          "Lambda.AWSLambdaException",
+                                          "Lambda.SdkClientException",
+                                          "Lambda.TooManyRequestsException"
+                                       ],
+                                       "IntervalSeconds":1,
+                                       "MaxAttempts":3,
+                                       "BackoffRate":2
+                                    }
+                                 ],
+                                 "Next":"FMEvalMetric"
+                              },
+                            "FMEvalMetric":{
+                                 "Type":"Map",
+                                 "ItemProcessor":{
+                                    "ProcessorConfig":{
+                                       "Mode":"INLINE"
+                                    },
+                                    "StartAt":"fmevalmetric",
+                                    "States":{
+                                       "fmevalmetric":{
+                                          "Type":"Task",
+                                          "Resource":"arn:aws:states:::lambda:invoke",
+                                          "Parameters":{
+                                             "FunctionName":"${EvaluateMetricArn}"
+                                          },
+                                          "Retry":[
+                                             {
+                                                "ErrorEquals":[
+                                                   "States.ALL"
+                                                ],
+                                                "IntervalSeconds":1,
+                                                "MaxAttempts":3,
+                                                "BackoffRate":2
+                                             }
+                                          ],
+                                          "End": true,
+                                          "ResultSelector":{
+                                             "result.$":"$.Payload"
+                                          },
+                                          "ResultPath":"$.result"
+                                       }
+                                    }
+                                 },
+                                 "ItemsPath":"$.result",
+                                 "End": true,
+                                 "MaxConcurrency":5
+                              }
+                           }
+                        }
+                     ],
+                     "End":true
+                  }
+               }
             }
           - {
             ValidateInputLambdaArn: !GetAtt ValidateLLMEvaluateInput.Arn,
             EvaluateLLMArn: !GetAtt EvaluateLLM.Arn,
-            EvaluateLLMSummaryArn: !GetAtt EvaluationResultSummary.Arn
+            EvaluateLLMSummaryArn: !GetAtt EvaluationResultSummary.Arn,
+            FMEvalValidationInputArn: !GetAtt FMEvalValidationInput.Arn,
+            EvaluateMetricArn: !GetAtt EvaluateMetric.Arn
           }
       RoleArn: !GetAtt LLMIEvaluationStatesExecutionRole.Arn
   InvokeLLM:
@@ -791,6 +889,36 @@ Resources:
                 - dynamodb:GetItem
                 - dynamodb:Query
               Resource: "*"
+  EvaluateMetric:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: evaluate_metrics_lambda
+      Handler: eval_metrics.lambda_handler
+      Runtime: python3.9
+      CodeUri: ../
+      MemorySize: 1024
+      Environment:
+        Variables:
+          Bucket: !Sub '${EvaluationBucket}'
+          TrainingURL: !Ref TrainingURL
+          MetricPrefix: !Ref MetricPrefix
+          SagemakerRoleArn: !GetAtt SageMakerRole.Arn
+      Timeout: 200
+      Policies:
+        - AWSLambdaVPCAccessExecutionRole
+        - AmazonSageMakerFullAccess
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                # TODO narrow down
+                - s3:*
+                - bedrock:*
+                - sagemaker:*
+                - dynamodb:GetItem
+                - dynamodb:Query
+              Resource: "*"
+
   ConvertToJson:
     Type: AWS::Serverless::Function
     Properties:
@@ -817,6 +945,27 @@ Resources:
     Properties:
       FunctionName: evaluate_llm_input_validation
       Handler: evaluate_llm_input_validation.handler
+      Runtime: python3.9
+      CodeUri: ../
+      MemorySize: 1024
+      Timeout: 5
+      Policies:
+        - AWSLambdaExecute
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                # TODO narrow down
+                - s3:*
+                - dynamodb:GetItem
+                - dynamodb:Query
+              Resource: "*"
+
+  FMEvalValidationInput:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: fmeval_input_validation
+      Handler: fmeval_input_validation.handler
       Runtime: python3.9
       CodeUri: ../
       MemorySize: 1024

@@ -54,10 +54,10 @@ def create_tarball(source_folder, tarball_name):
 def lambda_handler(event, context):
     logger.info(f"receiving event {event}")
 
-    bucket = event["Bucket"]
-    prefix = event["MetricPrefix"]
-    image_uri = event['TrainingURL']
-    role = event['SagemakerRoleArn']
+    bucket = os.getenv("Bucket")
+    prefix = os.getenv("MetricPrefix")
+    image_uri = os.getenv("TrainingURL")
+    role = os.getenv('SagemakerRoleArn')
 
     ## define the parameters
     input_data = event['evaluation_location']
