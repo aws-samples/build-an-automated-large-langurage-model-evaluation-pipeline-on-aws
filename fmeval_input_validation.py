@@ -31,7 +31,7 @@ def handler(event, context):
         raise Exception("instance_type is required")
     instance_type = event["instance_type"]
 
-    return {"result": [{"evaluation_metrics": metric, "evaluation_location": s3_location, "instance_type": instance_type} for metric in evaluation_metrics]}
+    return {"result": [{"metric": metric, "evaluation_location": s3_location, "instance_type": instance_type} for metric in evaluation_metrics]}
 
 
 def parse_s3_location(location):

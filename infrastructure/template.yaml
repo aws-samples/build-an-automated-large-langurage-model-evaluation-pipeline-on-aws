@@ -644,9 +644,9 @@ Resources:
                                        "BackoffRate":2
                                     }
                                  ],
-                                 "Next":"Map"
+                                 "Next":"LLMEvalMap"
                               },
-                              "Map":{
+                              "LLMEvalMap":{
                                  "Type":"Map",
                                  "ItemProcessor":{
                                     "ProcessorConfig":{
@@ -723,15 +723,15 @@ Resources:
                            }
                         },
                         {
-                           "StartAt":"evaluate_metric",
+                           "StartAt":"FMEval_metric_input",
                            "States":{
-                              "evaluate_metric":{
+                              "FMEval_metric_input":{
                                  "Type":"Task",
                                  "Resource":"arn:aws:states:::lambda:invoke",
                                  "OutputPath":"$.Payload",
                                  "Parameters":{
                                     "Payload.$":"$",
-                                    "FunctionName":"${EvaluateMetricArn}"
+                                    "FunctionName":"${FMEvalValidationInputArn}"
                                  },
                                  "Retry":[
                                     {
@@ -746,7 +746,43 @@ Resources:
                                        "BackoffRate":2
                                     }
                                  ],
-                                 "End":true
+                                 "Next":"FMEvalMetric"
+                              },
+                            "FMEvalMetric":{
+                                 "Type":"Map",
+                                 "ItemProcessor":{
+                                    "ProcessorConfig":{
+                                       "Mode":"INLINE"
+                                    },
+                                    "StartAt":"fmevalmetric",
+                                    "States":{
+                                       "fmevalmetric":{
+                                          "Type":"Task",
+                                          "Resource":"arn:aws:states:::lambda:invoke",
+                                          "Parameters":{
+                                             "FunctionName":"${EvaluateMetricArn}"
+                                          },
+                                          "Retry":[
+                                             {
+                                                "ErrorEquals":[
+                                                   "States.ALL"
+                                                ],
+                                                "IntervalSeconds":1,
+                                                "MaxAttempts":3,
+                                                "BackoffRate":2
+                                             }
+                                          ],
+                                          "End": true,
+                                          "ResultSelector":{
+                                             "result.$":"$.Payload"
+                                          },
+                                          "ResultPath":"$.result"
+                                       }
+                                    }
+                                 },
+                                 "ItemsPath":"$.result",
+                                 "End": true,
+                                 "MaxConcurrency":5
                               }
                            }
                         }
@@ -759,7 +795,8 @@ Resources:
             ValidateInputLambdaArn: !GetAtt ValidateLLMEvaluateInput.Arn,
             EvaluateLLMArn: !GetAtt EvaluateLLM.Arn,
             EvaluateLLMSummaryArn: !GetAtt EvaluationResultSummary.Arn,
-            EvaluateMetricArn: !GetAtt FMEvalValidationInput.Arn
+            FMEvalValidationInputArn: !GetAtt FMEvalValidationInput.Arn,
+            EvaluateMetricArn: !GetAtt EvaluateMetric.Arn
           }
       RoleArn: !GetAtt LLMIEvaluationStatesExecutionRole.Arn
   InvokeLLM:
