@@ -2,7 +2,8 @@ import json
 import pandas as pd
 import awswrangler as wr
 import os
-
+bucket_name = os.getenv("ResultBucket")
+database_name = os.getenv("ResultDatabase")
 
 def list_to_dataframe(input_list, columns):
     processed_list = [item.strip().split('|') for item in input_list]
@@ -11,6 +12,7 @@ def list_to_dataframe(input_list, columns):
 
 
 def handler(event, context):
+    print(event)
     execution_id = event['executionId'].split(":")[-1]
     event = event['input']
     if len(event) == 0:
@@ -23,12 +25,25 @@ def handler(event, context):
 
     input_list = [e['result']['result'] for e in event if 'evaluation_metrics' in e]
     df = list_to_dataframe(input_list, columns)
-    bucket_name = os.getenv("ResultBucket")
-    key = f"llm-response/{execution_id}/{model_family}-{model_name}.csv"
-    wr.s3.to_csv(
+    df['execution_id'] = execution_id
+
+    path = "llmeval_result/"
+    # wr.s3.to_csv(
+    #     df=df,
+    #     path=f"s3://{bucket_name}/{key}",
+    #     index=False,
+    #     sep=","
+    # )
+
+    wr.s3.to_parquet(
         df=df,
-        path=f"s3://{bucket_name}/{key}",
+        path=f"s3://{bucket_name}/{path}",
         index=False,
-        sep=","
+        dataset=True,
+        mode="append",
+        database=database_name,
+        partition_cols=['execution_id'],
+        table="llmeval_result"
     )
+
     return ["|".join(columns)] + input_list
