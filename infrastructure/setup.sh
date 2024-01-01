@@ -24,6 +24,10 @@ else
   echo "Bucket $BUCKET already exists, using the bucket"
 fi
 
+# update the boto3 layer into s3
+echo "Updating boto3 layer into s3..."
+aws s3 cp ./boto3-layer.zip s3://$BUCKET/boto3-layer.zip
+
 # Export bucket name as environment variable
 export EVAL_PIPELINE_BUCKET=$BUCKET
 
@@ -39,3 +43,15 @@ sam package --s3-bucket $BUCKET --output-template-file packaged.yaml --region $R
 # sam deploy
 echo "sam deploy..."
 sam deploy --template-file packaged.yaml --stack-name llm-evaluation-stack --capabilities CAPABILITY_NAMED_IAM --parameter-overrides TrainingURL=763104351884.dkr.ecr.$REGION.amazonaws.com/pytorch-training:2.1.0-cpu-py310 --region $REGION
+
+
+# Get the approximate number of items in the table
+ITEM_COUNT=$(aws dynamodb describe-table --table-name SolutionTableDDB | jq .Table.ItemCount)
+
+# Check if table is empty
+if [ "$ITEM_COUNT" -eq "0" ]; then
+  echo "Table SolutionTableDDB is empty... ingesting data"
+  aws dynamodb batch-write-item --request-items file://data.json
+else
+  echo "Table SolutionTableDDB already contains $ITEM_COUNT items"
+fi

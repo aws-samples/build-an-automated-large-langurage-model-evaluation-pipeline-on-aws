@@ -216,7 +216,7 @@ Resources:
               Value: "us-west-2"
             - Name: AWS_REGION
               Value: "us-west-2"
-          Image: "705484421587.dkr.ecr.us-west-2.amazonaws.com/api-layer:latest"
+          Image:  !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/api-layer:latest"
           Command:
             - "--host"
             - "0.0.0.0"
@@ -394,7 +394,7 @@ Resources:
     Type: 'AWS::S3::Bucket'
     Properties:
       BucketName:
-        Fn::Sub: 'llm-evaluation-result-${AWS::AccountId}-${AWS::Region}'
+        Fn::Sub: 'llm-evaluation-${AWS::AccountId}-${AWS::Region}'
   LLMInvocationStatesExecutionRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -806,7 +806,7 @@ Resources:
       FunctionName: invoke_llm_lambda
       Handler: invoke_llm_handler.handler
       Runtime: python3.9
-      CodeUri: ../
+      CodeUri: ../lambda
       MemorySize: 1024
       VpcConfig:
         SubnetIds:
@@ -838,7 +838,7 @@ Resources:
       FunctionName: invoke_llm_result_summary
       Handler: invoke_llm_result_summary.handler
       Runtime: python3.9
-      CodeUri: ../
+      CodeUri: ../lambda
       MemorySize: 1024
       Timeout: 30
       Layers:
@@ -862,7 +862,7 @@ Resources:
       FunctionName: evaluate_llm_lambda
       Handler: evaluate_llm_handler.handler
       Runtime: python3.9
-      CodeUri: ../
+      CodeUri: ../lambda
       MemorySize: 1024
       VpcConfig:
         SubnetIds:
@@ -877,6 +877,7 @@ Resources:
       Timeout: 200
       Layers:
         - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:10
+        - !Ref Boto3Layer
       Policies:
         - AWSLambdaVPCAccessExecutionRole
         - Version: '2012-10-17'
@@ -890,13 +891,25 @@ Resources:
                 - dynamodb:GetItem
                 - dynamodb:Query
               Resource: "*"
+
+  Boto3Layer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: boto3-layer
+      Description: "new boto3 layer with bedrock-runtime service"
+      Content:
+        S3Bucket: !Sub "eval-${AWS::AccountId}-${AWS::Region}"
+        S3Key: boto3-layer.zip
+      CompatibleRuntimes:
+        - python3.9
+
   EvaluateMetric:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: evaluate_metrics_lambda
       Handler: eval_metrics.lambda_handler
       Runtime: python3.9
-      CodeUri: ../
+      CodeUri: ../lambda
       MemorySize: 1024
       Environment:
         Variables:
@@ -926,7 +939,7 @@ Resources:
       FunctionName: invoke_llm_convert_to_json
       Handler: invoke_llm_convert_to_json.handler
       Runtime: python3.9
-      CodeUri: ../
+      CodeUri: ../lambda
       MemorySize: 1024
       Timeout: 5
       Layers:
@@ -947,7 +960,7 @@ Resources:
       FunctionName: evaluate_llm_input_validation
       Handler: evaluate_llm_input_validation.handler
       Runtime: python3.9
-      CodeUri: ../
+      CodeUri: ../lambda
       MemorySize: 1024
       Timeout: 5
       Policies:
@@ -968,7 +981,7 @@ Resources:
       FunctionName: fmeval_input_validation
       Handler: fmeval_input_validation.handler
       Runtime: python3.9
-      CodeUri: ../
+      CodeUri: ../lambda
       MemorySize: 1024
       Timeout: 5
       Policies:
@@ -989,7 +1002,7 @@ Resources:
       FunctionName: evaluate_llm_result_summary
       Handler: evaluate_llm_result_summary.handler
       Runtime: python3.9
-      CodeUri: ../
+      CodeUri: ../lambda
       MemorySize: 1024
       Timeout: 30
       Layers:
