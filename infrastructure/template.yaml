@@ -216,7 +216,7 @@ Resources:
               Value: "us-west-2"
             - Name: AWS_REGION
               Value: "us-west-2"
-          Image: "705484421587.dkr.ecr.us-west-2.amazonaws.com/api-layer:latest"
+          Image:  !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/api-layer:latest"
           Command:
             - "--host"
             - "0.0.0.0"
@@ -394,7 +394,7 @@ Resources:
     Type: 'AWS::S3::Bucket'
     Properties:
       BucketName:
-        Fn::Sub: 'llm-evaluation-result-${AWS::AccountId}-${AWS::Region}'
+        Fn::Sub: 'llm-evaluation-${AWS::AccountId}-${AWS::Region}'
   LLMInvocationStatesExecutionRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -618,21 +618,21 @@ Resources:
           - |-
             {
                "Comment":"Evaluate state machine",
-               "StartAt":"evaluate",
+               "StartAt":"Evaluate",
                "States":{
-                  "evaluate":{
+                  "Evaluate":{
                      "Type":"Parallel",
                      "Branches":[
                         {
-                           "StartAt":"validate_inputs",
+                           "StartAt":"LLMEval_input_process",
                            "States":{
-                              "validate_inputs":{
+                              "LLMEval_input_process":{
                                  "Type":"Task",
                                  "Resource":"arn:aws:states:::lambda:invoke",
                                  "OutputPath":"$.Payload",
                                  "Parameters":{
                                     "Payload.$":"$",
-                                    "FunctionName":"${ValidateInputLambdaArn}"
+                                    "FunctionName":"${LLMEvalInputProcessorLambdaArn}"
                                  },
                                  "Retry":[
                                     {
@@ -652,13 +652,13 @@ Resources:
                                     "ProcessorConfig":{
                                        "Mode":"INLINE"
                                     },
-                                    "StartAt":"evaluate_llm",
+                                    "StartAt":"LLMEvaluate",
                                     "States":{
-                                       "evaluate_llm":{
+                                       "LLMEvaluate":{
                                           "Type":"Task",
                                           "Resource":"arn:aws:states:::lambda:invoke",
                                           "Parameters":{
-                                             "FunctionName":"${EvaluateLLMArn}",
+                                             "FunctionName":"${LLMEvalLambdaArn}",
                                              "Payload":{
                                                 "execution_id.$":"$$.Execution.Id",
                                                 "input.$":"$"
@@ -694,10 +694,10 @@ Resources:
                                     }
                                  },
                                  "ItemsPath":"$.result",
-                                 "Next":"summarize_result",
+                                 "Next":"LLMEval_summarize_result",
                                  "MaxConcurrency":10
                               },
-                              "summarize_result":{
+                              "LLMEval_summarize_result":{
                                  "Type":"Task",
                                  "Resource":"arn:aws:states:::lambda:invoke",
                                  "OutputPath":"$.Payload",
@@ -723,9 +723,9 @@ Resources:
                            }
                         },
                         {
-                           "StartAt":"FMEval_metric_input",
+                           "StartAt":"FMEval_input_processor",
                            "States":{
-                              "FMEval_metric_input":{
+                              "FMEval_input_processor":{
                                  "Type":"Task",
                                  "Resource":"arn:aws:states:::lambda:invoke",
                                  "OutputPath":"$.Payload",
@@ -746,21 +746,22 @@ Resources:
                                        "BackoffRate":2
                                     }
                                  ],
-                                 "Next":"FMEvalMetric"
+                                 "Next":"FMEvalMap"
                               },
-                            "FMEvalMetric":{
+                            "FMEvalMap":{
                                  "Type":"Map",
                                  "ItemProcessor":{
                                     "ProcessorConfig":{
                                        "Mode":"INLINE"
                                     },
-                                    "StartAt":"fmevalmetric",
+                                    "StartAt":"FMEvaluate",
                                     "States":{
-                                       "fmevalmetric":{
+                                       "FMEvaluate":{
                                           "Type":"Task",
                                           "Resource":"arn:aws:states:::lambda:invoke",
                                           "Parameters":{
-                                             "FunctionName":"${EvaluateMetricArn}"
+                                             "FunctionName":"${EvaluateMetricArn}",
+                                             "Payload.$":"$"
                                           },
                                           "Retry":[
                                              {
@@ -792,8 +793,8 @@ Resources:
                }
             }
           - {
-            ValidateInputLambdaArn: !GetAtt ValidateLLMEvaluateInput.Arn,
-            EvaluateLLMArn: !GetAtt EvaluateLLM.Arn,
+            LLMEvalInputProcessorLambdaArn: !GetAtt ValidateLLMEvaluateInput.Arn,
+            LLMEvalLambdaArn: !GetAtt EvaluateLLM.Arn,
             EvaluateLLMSummaryArn: !GetAtt EvaluationResultSummary.Arn,
             FMEvalValidationInputArn: !GetAtt FMEvalValidationInput.Arn,
             EvaluateMetricArn: !GetAtt EvaluateMetric.Arn
@@ -805,7 +806,7 @@ Resources:
       FunctionName: invoke_llm_lambda
       Handler: invoke_llm_handler.handler
       Runtime: python3.9
-      CodeUri: ../
+      CodeUri: ../lambda
       MemorySize: 1024
       VpcConfig:
         SubnetIds:
@@ -837,7 +838,7 @@ Resources:
       FunctionName: invoke_llm_result_summary
       Handler: invoke_llm_result_summary.handler
       Runtime: python3.9
-      CodeUri: ../
+      CodeUri: ../lambda
       MemorySize: 1024
       Timeout: 30
       Layers:
@@ -861,7 +862,7 @@ Resources:
       FunctionName: evaluate_llm_lambda
       Handler: evaluate_llm_handler.handler
       Runtime: python3.9
-      CodeUri: ../
+      CodeUri: ../lambda
       MemorySize: 1024
       VpcConfig:
         SubnetIds:
@@ -876,6 +877,7 @@ Resources:
       Timeout: 200
       Layers:
         - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:10
+        - !Ref Boto3Layer
       Policies:
         - AWSLambdaVPCAccessExecutionRole
         - Version: '2012-10-17'
@@ -889,13 +891,25 @@ Resources:
                 - dynamodb:GetItem
                 - dynamodb:Query
               Resource: "*"
+
+  Boto3Layer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: boto3-layer
+      Description: "new boto3 layer with bedrock-runtime service"
+      Content:
+        S3Bucket: !Sub "eval-${AWS::AccountId}-${AWS::Region}"
+        S3Key: boto3-layer.zip
+      CompatibleRuntimes:
+        - python3.9
+
   EvaluateMetric:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: evaluate_metrics_lambda
       Handler: eval_metrics.lambda_handler
       Runtime: python3.9
-      CodeUri: ../
+      CodeUri: ../lambda
       MemorySize: 1024
       Environment:
         Variables:
@@ -925,7 +939,7 @@ Resources:
       FunctionName: invoke_llm_convert_to_json
       Handler: invoke_llm_convert_to_json.handler
       Runtime: python3.9
-      CodeUri: ../
+      CodeUri: ../lambda
       MemorySize: 1024
       Timeout: 5
       Layers:
@@ -946,7 +960,7 @@ Resources:
       FunctionName: evaluate_llm_input_validation
       Handler: evaluate_llm_input_validation.handler
       Runtime: python3.9
-      CodeUri: ../
+      CodeUri: ../lambda
       MemorySize: 1024
       Timeout: 5
       Policies:
@@ -967,7 +981,7 @@ Resources:
       FunctionName: fmeval_input_validation
       Handler: fmeval_input_validation.handler
       Runtime: python3.9
-      CodeUri: ../
+      CodeUri: ../lambda
       MemorySize: 1024
       Timeout: 5
       Policies:
@@ -988,7 +1002,7 @@ Resources:
       FunctionName: evaluate_llm_result_summary
       Handler: evaluate_llm_result_summary.handler
       Runtime: python3.9
-      CodeUri: ../
+      CodeUri: ../lambda
       MemorySize: 1024
       Timeout: 30
       Layers:
@@ -996,6 +1010,7 @@ Resources:
       Environment:
         Variables:
           ResultBucket: !Sub '${EvaluationBucket}'
+          ResultDatabase: !Ref ResultDatabase
       Policies:
         - AWSLambdaExecute
         - Version: '2012-10-17'
@@ -1004,6 +1019,11 @@ Resources:
               Action:
                 # TODO narrow down
                 - s3:*
+                - glue:GetTable
+                - glue:GetDatabase
+                - glue:CreateTable
+                - glue:UpdateTable
+                - glue:BatchCreatePartition
               Resource: "*"
 
 
@@ -1028,3 +1048,10 @@ Resources:
         ReadCapacityUnits: "5"
         WriteCapacityUnits: "5"
       TableName: "SolutionTableDDB"
+
+  ResultDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: "llmeval_result"

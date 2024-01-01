@@ -1,0 +1,22 @@
+{
+    "RequestItems": {
+        "SolutionTableDDB": [
+            {
+                "PutRequest": {
+                    "Item": {
+                        "PK": { "S": "1" },
+                        "SK": { "S": "John Doe" }
+                    }
+                }
+            },
+            {
+                "PutRequest": {
+                    "Item": {
+                        "PK": { "S": "2" },
+                        "SK": { "S": "Jane Smith" }
+                    }
+                }
+            }
+        ]
+    }
+}

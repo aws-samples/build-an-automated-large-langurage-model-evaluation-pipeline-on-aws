@@ -1,0 +1,206 @@
+{
+    "SolutionTableDDB": [
+      {
+        "PutRequest": {
+          "Item": {
+            "PK": {
+              "S": "Evaluation"
+            },
+            "SK": {
+              "S": "Template"
+            },
+            "template": {
+              "S": "Human: The following is a conversation between a highly knowledgeable and intelligent AI assistant, called Assistant, and a Human user asking Questions. In the following interactions, Assistant will converse in natural language, and Assistant will answer the questions based only on the provided Context. Assistant will provide accurate, short and direct answers to the questions. Answer the below question based on the provided Context, Inquiry and Response.\n\n Context: {CONTEXT}\n\nInquiry: {INQUIRY}\n\nResponse: {RESPONSE}\n\nQuestion: {QUESTION}\n\nAssistant: "
+            },
+            "parameters": {
+              "L": [
+                {
+                  "S": "CONTEXT"
+                },
+                {
+                  "S": "INQUIRY"
+                },
+                {
+                  "S": "RESPONSE"
+                },
+                {
+                  "S": "QUESTION"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "PutRequest": {
+          "Item": {
+            "PK": {
+              "S": "EvaluationQuestions"
+            },
+            "SK": {
+              "S": "Similarity#Cosine Metric"
+            }
+          }
+        }
+      },
+      {
+        "PutRequest": {
+          "Item": {
+            "PK": {
+              "S": "EvaluationQuestions"
+            },
+            "SK": {
+              "S": "Simple#Accuracy Check"
+            },
+            "Weight": {
+              "N": "20"
+            },
+            "Question": {
+              "S": "Based solely on the provided context, is the above response accurately answers the Inquiry? Answer with Yes or No only."
+            }
+          }
+        }
+      },
+      {
+        "PutRequest": {
+          "Item": {
+            "PK": {
+              "S": "EvaluationQuestions"
+            },
+            "SK": {
+              "S": "Simple#Compact Check"
+            },
+            "Weight": {
+              "N": "10"
+            },
+            "Question": {
+              "S": "Is the above response short, compact and direct? Answer with Yes or No only."
+            }
+          }
+        }
+      },
+      {
+        "PutRequest": {
+          "Item": {
+            "PK": {
+              "S": "EvaluationQuestions"
+            },
+            "SK": {
+              "S": "Simple#Form Check"
+            },
+            "Weight": {
+              "N": "20"
+            },
+            "Question": {
+              "S": "The above response does not mention the word `context` in reference to the above provided context, is that true? Answer with Yes or No only."
+            }
+          }
+        }
+      },
+      {
+        "PutRequest": {
+          "Item": {
+            "PK": {
+              "S": "EvaluationQuestions"
+            },
+            "SK": {
+              "S": "Simple#Redundancy Check"
+            },
+            "Weight": {
+              "N": "10"
+            },
+            "Question": {
+              "S": "The above response does not have any words that can be removed without imapcting its meaning, is that true? Answer with Yes or No only."
+            }
+          }
+        }
+      },
+      {
+        "PutRequest": {
+          "Item": {
+            "PK": {
+              "S": "EvaluationQuestions"
+            },
+            "SK": {
+              "S": "Simple#Relevancy Check"
+            },
+            "Weight": {
+              "N": "30"
+            },
+            "Question": {
+              "S": "The above response does not have any words that can be removed without imapcting its meaning, is that true? Answer with Yes or No only."
+            }
+          }
+        }
+      },
+      {
+        "PutRequest": {
+          "Item": {
+            "PK": {
+              "S": "EvaluationQuestions"
+            },
+            "SK": {
+              "S": "Simple#Sanity Check"
+            },
+            "Weight": {
+              "N": "20"
+            },
+            "Question": {
+              "S": "Is the above response based solely on the provided context? Answer with Yes or No only."
+            }
+          }
+        }
+      },
+      {
+        "PutRequest": {
+          "Item": {
+            "PK": {
+              "S": "FMEVALMetric"
+            },
+            "SK": {
+              "S": "FactualKnowledge"
+            }
+          }
+        }
+      },
+      {
+        "PutRequest": {
+          "Item": {
+            "PK": {
+              "S": "FMEVALMetric"
+            },
+            "SK": {
+              "S": "QAAccuracy"
+            }
+          }
+        }
+      },
+      {
+        "PutRequest": {
+          "Item": {
+            "PK": {
+              "S": "FMEVALMetric"
+            },
+            "SK": {
+              "S": "QAToxicity"
+            }
+          }
+        }
+      },
+      {
+        "PutRequest": {
+          "Item": {
+            "PK": {
+              "S": "EvaluationQuestions#hash"
+            },
+            "SK": {
+              "S": "Composed#Weighted Score"
+            },
+            "SKPrefix": {
+              "S": "Simple"
+            }
+          }
+        }
+      }
+    ]
+}
