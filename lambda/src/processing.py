@@ -31,6 +31,10 @@ eval_func = {
         'config': QAAccuracyConfig(target_output_delimiter="<OR>")
     }
 }
+
+def get_time():
+    return time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
+
 # Parse argument variables passed via the CreateDataset processing step
 def parse_args() -> None:
     parser = argparse.ArgumentParser()
@@ -41,6 +45,7 @@ def parse_args() -> None:
     parser.add_argument('--target_output_location', type=str, default="ExpectedAnswer")
     parser.add_argument('--model_output_location', type=str, default="Response")
     parser.add_argument('--dataset_name', type=str, default="test_dataset_model_answers")
+    parser.add_argument('--bucket', type=str, default="result_bucket")
     args, _ = parser.parse_known_args()
     return args
 
@@ -65,11 +70,17 @@ def main(base_dir: str, args: argparse.Namespace):
         print(f"Directory '{eval_results_path}' exists.")
     else:
         os.mkdir(eval_results_path)
+        print(f"creating directory - {eval_results_path}")
 
     # run eval
     eval_algo = eval_func[args.metric]['metric'](eval_func[args.metric]['config'])
     eval_output = eval_algo.evaluate(dataset_config=config, prompt_template="$feature", save=True)
-    print(json.dumps(eval_output, default=vars, indent=4))
+    eval_output_json = json.dumps(eval_output, default=vars, indent=4)
+    s3 = boto3.client('s3')
+    print(eval_output_json)
+    key = f"clarify_evaluation/result/clarify_eval_results_{args.metric}_{get_time()}.json"
+    print(f"Uploading to s3://{args.bucket}/{key}")
+    s3.put_object(Bucket=args.bucket, Key=key, Body=eval_output_json)
     
     return 
     

@@ -21,6 +21,19 @@ import awswrangler as wr
 import time
 
 
+def format_number(number):
+    try:
+        float_number = float(number)
+    except:
+        return str(number)
+    if float_number == 1:
+        return "1"
+    elif float_number == 0:
+        return "0"
+    else:
+        return str(number)
+
+
 def handler(event, context):
     logger.info(f"receiving event {event}")
     bucket_name = os.getenv("ResultBucket")
@@ -97,11 +110,10 @@ Assistant: """,
 
     logger.info("begin evaluation")
     eval_data = []
-    question_answer = event['evaluation_question_answer'].replace("'",'"')
+    dataset = event['evaluation_question_answer']
     model_family = event['model_family']
     model_name = event['model_name']
 
-    dataset = json.loads(question_answer)
     evals = []
     for metric_ in metrics_to_evaluate:
         # as we use bedrock but it got throttled, we put some sleep time to reduce the tps
@@ -121,7 +133,7 @@ Assistant: """,
                 "text1": dataset["Response"],
                 "text2": dataset["ExpectedAnswer"]
             }
-        score = metric.score(param_values=param_values)
+        score = format_number(metric.score(param_values=param_values))
         evals.append({"Key": metric_["metric_name"], "Value": score})
     eval_data.append(
         {
@@ -136,6 +148,6 @@ Assistant: """,
     for _eval in evals:
         eval_data[-1][_eval["Key"]] = _eval["Value"]
     eval_dataset = pd.DataFrame(eval_data)
-    output_string = eval_dataset.to_csv(sep='|', index=False, header=False)
+    output_string = eval_dataset.to_csv(sep='|', index=False, header=False).strip()
     key = f"llm-evaluation/{execution_id}/{model_family}-{model_name}.csv"
     return output_string

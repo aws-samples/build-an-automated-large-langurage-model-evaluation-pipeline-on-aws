@@ -1,4 +1,5 @@
 import boto3
+import json
 from handlers.utils.evaluation_util import EvaluationUtils
 
 s3_client = boto3.client('s3')
@@ -74,12 +75,13 @@ def parse_s3_jsonl_object(s3_cleint, bucket_name, object_key):
         response = s3_cleint.get_object(Bucket=bucket_name, Key=object_key)
         content = response['Body'].read().decode('utf-8')
         # replace " with ' in content
-        content = content.replace('"', "'")
+        # content = content.replace('"', "'")
         # Split the content into lines and return as a list
-        json_lines = content.split('\n')
-        return json_lines
+        # Splitting content by lines and parsing each line as JSON
+        data_list = [json.loads(line) for line in content.strip().split('\n') if line]
+
+        return data_list
 
     except Exception as e:
         print(f"Error reading S3 object: {e}")
         return []
-

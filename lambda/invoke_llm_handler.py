@@ -53,8 +53,8 @@ Assistant:""",
     # the format is id|question|context|response
     # we need to split the string using | as the seperator
     prompt = event['prompt']
-    model_family = event['model_family']
-    model_name = event['model_name']
+    model_family = event['invoke_model_family']
+    model_name = event['invoke_model_name']
     execution_id = event['execution_id']
 
     prompts_list = prompt.split('|')

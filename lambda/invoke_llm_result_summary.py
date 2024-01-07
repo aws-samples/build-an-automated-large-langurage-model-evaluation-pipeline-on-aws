@@ -13,24 +13,21 @@ def handler(event, context):
     success_result = [item for item in event if "result" in item]
     columns = ["id", "QUESTION", "CONTEXT", "Expected Answer"]
     # for each successful result, read from the s3 path into a dataframe then convert it to json
-    result_json = []
+    result_json = ""
     execution_id = event[0]['execution_id']
     for result in success_result:
         df = wr.s3.read_csv(path=result['result'], sep='|')
 
         df.rename(columns={"Expected Answer": "ExpectedAnswer"}, inplace=True)
-        jsonoutput = json.loads(df.to_json(orient="records"))
-
-        result_json.extend(jsonoutput)
-
-    success_result_as_jsonl = "\n".join([str(item) for item in result_json])
+        json_output = df.to_json(orient="records")[1:-1] +"\n"
+        result_json += json_output
 
     key = f"invoke_successful_result/jsonline/{execution_id}/result.jsonl"
     # write the result_json as a string to S3
-    s3.put_object(Bucket=bucket, Key=key, Body=success_result_as_jsonl)
+    s3.put_object(Bucket=bucket, Key=key, Body=result_json)
 
     result = {
-        "success_result": key
+        "success_result": f"s3://{bucket}/{key}"
     }
     if len(failed_result) > 0:
         split_data = [item.split('|') for item in failed_result]

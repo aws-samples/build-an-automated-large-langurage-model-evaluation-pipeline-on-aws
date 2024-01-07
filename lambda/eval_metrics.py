@@ -166,7 +166,9 @@ def lambda_handler(event, context):
                 "--metric",
                 metric,
                 "--data_file",
-                data_file
+                data_file,
+                "--bucket",
+                bucket
             ]
         },
         RoleArn=role,

@@ -21,19 +21,13 @@ def handler(event, context):
     model_family = event[0]['model_family']
     model_name = event[0]['model_name']
 
-    columns = ['ID', "Question", "Model"] + evaluation_metrics
+    columns = ['id', "Question", "Model"] + evaluation_metrics
 
     input_list = [e['result']['result'] for e in event if 'evaluation_metrics' in e]
     df = list_to_dataframe(input_list, columns)
     df['execution_id'] = execution_id
 
     path = "llmeval_result/"
-    # wr.s3.to_csv(
-    #     df=df,
-    #     path=f"s3://{bucket_name}/{key}",
-    #     index=False,
-    #     sep=","
-    # )
 
     wr.s3.to_parquet(
         df=df,
