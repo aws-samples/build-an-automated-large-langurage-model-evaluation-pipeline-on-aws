@@ -2,7 +2,7 @@
 
 ## Architecture
 
-![Architecture](Assets/eval-prompt-ops.png)
+![Architecture](Assets/eval-prompt-ops-update.png)
 
 ## Security
 
