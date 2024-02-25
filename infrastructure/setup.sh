@@ -31,6 +31,28 @@ aws s3 cp ./boto3-layer.zip s3://$BUCKET/boto3-layer.zip
 # Export bucket name as environment variable
 export EVAL_PIPELINE_BUCKET=$BUCKET
 
+# create a ecr repository
+echo "check if api-layer repository exists..."
+aws ecr describe-repositories --repository-names api-layer --region $REGION 1>/dev/null 2>/dev/null
+if [ $? -ne 0 ]; then
+    echo "api-layer repository does not exist, creating..."
+    aws ecr create-repository --repository-name api-layer --region $REGION
+    echo "api-layer repository created"
+fi
+
+# build the api layer
+echo "login to ecr..."
+aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com
+echo "building api layer..."
+cd ../api-layer
+docker build -t api-layer .
+docker tag api-layer:latest $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/api-layer:latest
+docker push $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/api-layer:latest
+echo "api layer build completed"
+
+
+# back to the setup folder
+cd ../infrastructure
 
 # sam build
 echo "sam build..."
@@ -52,6 +74,26 @@ ITEM_COUNT=$(aws dynamodb describe-table --table-name SolutionTableDDB | jq .Tab
 if [ "$ITEM_COUNT" -eq "0" ]; then
   echo "Table SolutionTableDDB is empty... ingesting data"
   aws dynamodb batch-write-item --request-items file://data.json
+else
+  echo "Table SolutionTableDDB already contains $ITEM_COUNT items"
+fi
+
+ITEM_COUNT=$(aws dynamodb describe-table --table-name SolutionTableDDB | jq .Table.ItemCount)
+
+# Check if table is empty
+if [ "$ITEM_COUNT" -eq "0" ]; then
+  echo "Table SolutionTableDDB is empty... ingesting data"
+  aws dynamodb batch-write-item --request-items file://solutionddb-data.json
+else
+  echo "Table SolutionTableDDB already contains $ITEM_COUNT items"
+fi
+
+ITEM_COUNT=$(aws dynamodb describe-table --table-name api-layer-ddb| jq .Table.ItemCount)
+
+# Check if table is empty
+if [ "$ITEM_COUNT" -eq "0" ]; then
+  echo "Table api-layer-ddb is empty... ingesting data"
+  aws dynamodb batch-write-item --request-items file://api-layer-ddb-data.json
 else
   echo "Table SolutionTableDDB already contains $ITEM_COUNT items"
 fi
