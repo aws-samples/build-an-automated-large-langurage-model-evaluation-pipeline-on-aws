@@ -19,18 +19,18 @@ def handler(event, context):
         df = wr.s3.read_csv(path=result['result'], sep='|')
 
         df.rename(columns={"Expected Answer": "ExpectedAnswer"}, inplace=True)
-        jsonoutput = json.loads(df.to_json(orient="records"))
+        for _, row in df.iterrows():
+            json_str = json.dumps(row.to_dict(), ensure_ascii=False)
+            result_json.append(json_str)
 
-        result_json.extend(jsonoutput)
-
-    success_result_as_jsonl = "\n".join([str(item) for item in result_json])
+    success_result_as_jsonl = "\n".join(result_json)
 
     key = f"invoke_successful_result/jsonline/{execution_id}/result.jsonl"
     # write the result_json as a string to S3
     s3.put_object(Bucket=bucket, Key=key, Body=success_result_as_jsonl)
 
     result = {
-        "success_result": key
+        "success_result": f"s3://{bucket}/{key}"
     }
     if len(failed_result) > 0:
         split_data = [item.split('|') for item in failed_result]

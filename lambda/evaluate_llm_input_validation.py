@@ -7,7 +7,7 @@ evaluation_utils = EvaluationUtils("SolutionTableDDB")
 
 def handler(event, context):
     available_metrics = evaluation_utils.get_all_metrics()
-    evaluation_metrics = event.get("metrics", [])
+    evaluation_metrics = event.get("evaluation_metrics", [])
 
     if "evaluation_model_family" not in event:
         raise Exception("no evaluation_model_family in event")
@@ -17,7 +17,7 @@ def handler(event, context):
 
     for metric in evaluation_metrics:
         if metric not in available_metrics:
-            del evaluation_metrics[metric]
+            evaluation_metrics.remove(metric)
 
     if len(evaluation_metrics) == 0:
         evaluation_metrics = available_metrics

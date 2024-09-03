@@ -7,11 +7,11 @@ evaluation_utils = EvaluationUtils("SolutionTableDDB")
 
 def handler(event, context):
     available_metrics = evaluation_utils.get_fmeval_metric()
-    evaluation_metrics = event.get("metrics", [])
+    evaluation_metrics = event.get("evaluation_metrics", [])
 
     for metric in evaluation_metrics:
         if metric not in available_metrics:
-            del evaluation_metrics[metric]
+            evaluation_metrics.remove(metric)
 
     if len(evaluation_metrics) == 0:
         evaluation_metrics = available_metrics

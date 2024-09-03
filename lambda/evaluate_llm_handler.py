@@ -105,7 +105,7 @@ Assistant: """,
     evals = []
     for metric_ in metrics_to_evaluate:
         # as we use bedrock but it got throttled, we put some sleep time to reduce the tps
-        time.sleep(random.randint(0,5))
+        time.sleep(random.randint(0,10))
         metric = metric_["scoring_object"]
         logger.info(f"evaluating metric {metric_['metric_name']}")
         if isinstance(metric, SurveyMetric):

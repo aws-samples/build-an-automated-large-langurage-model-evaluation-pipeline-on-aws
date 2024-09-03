@@ -536,7 +536,7 @@ Resources:
                     }
                   },
                   "ItemsPath": "$.result",
-                  "MaxConcurrency": 10,
+                  "MaxConcurrency": 5,
                   "Next": "InvokeSummary"
                 },
                 "InvokeSummary": {
@@ -617,180 +617,184 @@ Resources:
         Fn::Sub:
           - |-
             {
-               "Comment":"Evaluate state machine",
-               "StartAt":"Evaluate",
-               "States":{
-                  "Evaluate":{
-                     "Type":"Parallel",
-                     "Branches":[
-                        {
-                           "StartAt":"LLMEval_input_process",
-                           "States":{
-                              "LLMEval_input_process":{
-                                 "Type":"Task",
-                                 "Resource":"arn:aws:states:::lambda:invoke",
-                                 "OutputPath":"$.Payload",
-                                 "Parameters":{
-                                    "Payload.$":"$",
-                                    "FunctionName":"${LLMEvalInputProcessorLambdaArn}"
-                                 },
-                                 "Retry":[
-                                    {
-                                       "ErrorEquals":[
-                                          "States.ALL"
-                                       ],
-                                       "IntervalSeconds":1,
-                                       "MaxAttempts":3,
-                                       "BackoffRate":2
-                                    }
-                                 ],
-                                 "Next":"LLMEvalMap"
-                              },
-                              "LLMEvalMap":{
-                                 "Type":"Map",
-                                 "ItemProcessor":{
-                                    "ProcessorConfig":{
-                                       "Mode":"INLINE"
-                                    },
-                                    "StartAt":"LLMEvaluate",
-                                    "States":{
-                                       "LLMEvaluate":{
-                                          "Type":"Task",
-                                          "Resource":"arn:aws:states:::lambda:invoke",
-                                          "Parameters":{
-                                             "FunctionName":"${LLMEvalLambdaArn}",
-                                             "Payload":{
-                                                "execution_id.$":"$$.Execution.Id",
-                                                "input.$":"$"
-                                             }
-                                          },
-                                          "Retry":[
-                                             {
-                                                "ErrorEquals":[
-                                                   "States.ALL"
-                                                ],
-                                                "IntervalSeconds":1,
-                                                "MaxAttempts":3,
-                                                "BackoffRate":2
-                                             }
-                                          ],
-                                          "Catch":[
-                                             {
-                                                "ErrorEquals":[
-                                                   "States.ALL"
-                                                ],
-                                                "Next":"NoResult"
-                                             }
-                                          ],
-                                          "End":true,
-                                          "ResultSelector":{
-                                             "result.$":"$.Payload"
-                                          },
-                                          "ResultPath":"$.result"
-                                       },
-                                       "NoResult":{
-                                          "Type":"Succeed"
-                                       }
-                                    }
-                                 },
-                                 "ItemsPath":"$.result",
-                                 "Next":"LLMEval_summarize_result",
-                                 "MaxConcurrency":10
-                              },
-                              "LLMEval_summarize_result":{
-                                 "Type":"Task",
-                                 "Resource":"arn:aws:states:::lambda:invoke",
-                                 "OutputPath":"$.Payload",
-                                 "Parameters":{
-                                    "Payload":{
-                                       "executionId.$":"$$.Execution.Id",
-                                       "input.$":"$"
-                                    },
-                                    "FunctionName":"${EvaluateLLMSummaryArn}"
-                                 },
-                                 "Retry":[
-                                    {
-                                       "ErrorEquals":[
-                                          "States.ALL"
-                                       ],
-                                       "IntervalSeconds":1,
-                                       "MaxAttempts":3,
-                                       "BackoffRate":2
-                                    }
-                                 ],
-                                 "End":true
-                              }
-                           }
+              "Comment": "Evaluate state machine",
+              "StartAt": "Evaluation Memthod Choice",
+              "States": {
+                "Evaluation Memthod Choice": {
+                  "Type": "Choice",
+                  "Choices": [
+                    {
+                      "Variable": "$.method",
+                      "StringMatches": "llmeval",
+                      "Next": "LLMEval_input_process"
+                    },
+                    {
+                      "Variable": "$.method",
+                      "StringMatches": "fmeval",
+                      "Next": "FMEval_input_processor"
+                    }
+                  ],
+                  "Default": "Pass"
+                },
+                "Pass": {
+                  "Type": "Pass",
+                  "End": true
+                },
+                "LLMEval_input_process": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "OutputPath": "$.Payload",
+                  "Parameters": {
+                    "Payload.$": "$",
+                    "FunctionName":"${LLMEvalInputProcessorLambdaArn}"
+                  },
+                  "Retry": [
+                    {
+                      "ErrorEquals": [
+                        "States.ALL"
+                      ],
+                      "IntervalSeconds": 1,
+                      "MaxAttempts": 3,
+                      "BackoffRate": 2
+                    }
+                  ],
+                  "Next": "LLMEvalMap"
+                },
+                "LLMEvalMap": {
+                  "Type": "Map",
+                  "ItemProcessor": {
+                    "ProcessorConfig": {
+                      "Mode": "INLINE"
+                    },
+                    "StartAt": "LLMEvaluate",
+                    "States": {
+                      "LLMEvaluate": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::lambda:invoke",
+                        "Parameters": {
+                          "FunctionName":"${LLMEvalLambdaArn}",
+                          "Payload": {
+                            "execution_id.$": "$$.Execution.Id",
+                            "input.$": "$"
+                          }
                         },
-                        {
-                           "StartAt":"FMEval_input_processor",
-                           "States":{
-                              "FMEval_input_processor":{
-                                 "Type":"Task",
-                                 "Resource":"arn:aws:states:::lambda:invoke",
-                                 "OutputPath":"$.Payload",
-                                 "Parameters":{
-                                    "Payload.$":"$",
-                                    "FunctionName":"${FMEvalValidationInputArn}"
-                                 },
-                                 "Retry":[
-                                    {
-                                       "ErrorEquals":[
-                                          "Lambda.ServiceException",
-                                          "Lambda.AWSLambdaException",
-                                          "Lambda.SdkClientException",
-                                          "Lambda.TooManyRequestsException"
-                                       ],
-                                       "IntervalSeconds":1,
-                                       "MaxAttempts":3,
-                                       "BackoffRate":2
-                                    }
-                                 ],
-                                 "Next":"FMEvalMap"
-                              },
-                            "FMEvalMap":{
-                                 "Type":"Map",
-                                 "ItemProcessor":{
-                                    "ProcessorConfig":{
-                                       "Mode":"INLINE"
-                                    },
-                                    "StartAt":"FMEvaluate",
-                                    "States":{
-                                       "FMEvaluate":{
-                                          "Type":"Task",
-                                          "Resource":"arn:aws:states:::lambda:invoke",
-                                          "Parameters":{
-                                             "FunctionName":"${EvaluateMetricArn}",
-                                             "Payload.$":"$"
-                                          },
-                                          "Retry":[
-                                             {
-                                                "ErrorEquals":[
-                                                   "States.ALL"
-                                                ],
-                                                "IntervalSeconds":1,
-                                                "MaxAttempts":3,
-                                                "BackoffRate":2
-                                             }
-                                          ],
-                                          "End": true,
-                                          "ResultSelector":{
-                                             "result.$":"$.Payload"
-                                          },
-                                          "ResultPath":"$.result"
-                                       }
-                                    }
-                                 },
-                                 "ItemsPath":"$.result",
-                                 "End": true,
-                                 "MaxConcurrency":5
-                              }
-                           }
-                        }
-                     ],
-                     "End":true
-                  }
-               }
+                        "Retry": [
+                          {
+                            "ErrorEquals": [
+                              "States.ALL"
+                            ],
+                            "IntervalSeconds": 1,
+                            "MaxAttempts": 3,
+                            "BackoffRate": 2
+                          }
+                        ],
+                        "Catch": [
+                          {
+                            "ErrorEquals": [
+                              "States.ALL"
+                            ],
+                            "Next": "NoResult"
+                          }
+                        ],
+                        "End": true,
+                        "ResultSelector": {
+                          "result.$": "$.Payload"
+                        },
+                        "ResultPath": "$.result"
+                      },
+                      "NoResult": {
+                        "Type": "Succeed"
+                      }
+                    }
+                  },
+                  "ItemsPath": "$.result",
+                  "Next": "LLMEval_summarize_result",
+                  "MaxConcurrency": 10
+                },
+                "LLMEval_summarize_result": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "OutputPath": "$.Payload",
+                  "Parameters": {
+                    "Payload": {
+                      "executionId.$": "$$.Execution.Id",
+                      "input.$": "$"
+                    },
+                    "FunctionName":"${EvaluateLLMSummaryArn}"
+                  },
+                  "Retry": [
+                    {
+                      "ErrorEquals": [
+                        "States.ALL"
+                      ],
+                      "IntervalSeconds": 1,
+                      "MaxAttempts": 3,
+                      "BackoffRate": 2
+                    }
+                  ],
+                  "End": true
+                },
+                "FMEval_input_processor": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "OutputPath": "$.Payload",
+                  "Parameters": {
+                    "Payload.$": "$",
+                    "FunctionName":"${FMEvalValidationInputArn}"
+                  },
+                  "Retry": [
+                    {
+                      "ErrorEquals": [
+                        "Lambda.ServiceException",
+                        "Lambda.AWSLambdaException",
+                        "Lambda.SdkClientException",
+                        "Lambda.TooManyRequestsException"
+                      ],
+                      "IntervalSeconds": 1,
+                      "MaxAttempts": 3,
+                      "BackoffRate": 2
+                    }
+                  ],
+                  "Next": "FMEvalMap"
+                },
+                "FMEvalMap": {
+                  "Type": "Map",
+                  "ItemProcessor": {
+                    "ProcessorConfig": {
+                      "Mode": "INLINE"
+                    },
+                    "StartAt": "FMEvaluate",
+                    "States": {
+                      "FMEvaluate": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::lambda:invoke",
+                        "Parameters": {
+                          "FunctionName":"${EvaluateMetricArn}",
+                          "Payload.$": "$"
+                        },
+                        "Retry": [
+                          {
+                            "ErrorEquals": [
+                              "States.ALL"
+                            ],
+                            "IntervalSeconds": 1,
+                            "MaxAttempts": 3,
+                            "BackoffRate": 2
+                          }
+                        ],
+                        "End": true,
+                        "ResultSelector": {
+                          "result.$": "$.Payload"
+                        },
+                        "ResultPath": "$.result"
+                      }
+                    }
+                  },
+                  "ItemsPath": "$.result",
+                  "End": true,
+                  "MaxConcurrency": 5
+                }
+              }
             }
           - {
             LLMEvalInputProcessorLambdaArn: !GetAtt ValidateLLMEvaluateInput.Arn,
@@ -807,7 +811,7 @@ Resources:
       Handler: invoke_llm_handler.handler
       Runtime: python3.9
       CodeUri: ../lambda
-      MemorySize: 1024
+      MemorySize: 10240
       VpcConfig:
         SubnetIds:
           - !Ref PrivateSubnetA
@@ -815,12 +819,17 @@ Resources:
         SecurityGroupIds:
           - !Ref SecurityGroup
       Timeout: 100
+      EphemeralStorage:
+        Size: 1024
       Environment:
         Variables:
           ResultBucket: !Sub '${EvaluationBucket}'
           LLMEndpoint: !Sub "http://${LLMInternalALB.DNSName}:8001/invoke"
+          LIB_BUCKET: !Sub 'eval-${AWS::AccountId}-${AWS::Region}'
+          LIB_FILE: "lambda_extra_package.zip"
+          KB_ID: !Ref KnowledgeBaseWithAoss
       Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:10
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:25
       Policies:
         - AWSLambdaVPCAccessExecutionRole
         - Version: '2012-10-17'
@@ -842,7 +851,7 @@ Resources:
       MemorySize: 1024
       Timeout: 30
       Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:10
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:25
       Environment:
         Variables:
           ResultBucket: !Sub '${EvaluationBucket}'
@@ -876,8 +885,7 @@ Resources:
           LLMEndpoint: !Sub "http://${LLMInternalALB.DNSName}:8001/invoke"
       Timeout: 200
       Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:10
-        - !Ref Boto3Layer
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:25
       Policies:
         - AWSLambdaVPCAccessExecutionRole
         - Version: '2012-10-17'
@@ -892,16 +900,6 @@ Resources:
                 - dynamodb:Query
               Resource: "*"
 
-  Boto3Layer:
-    Type: AWS::Lambda::LayerVersion
-    Properties:
-      LayerName: boto3-layer
-      Description: "new boto3 layer with bedrock-runtime service"
-      Content:
-        S3Bucket: !Sub "eval-${AWS::AccountId}-${AWS::Region}"
-        S3Key: boto3-layer.zip
-      CompatibleRuntimes:
-        - python3.9
 
   EvaluateMetric:
     Type: AWS::Serverless::Function
@@ -943,7 +941,7 @@ Resources:
       MemorySize: 1024
       Timeout: 5
       Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:10
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:25
       Policies:
         - AWSLambdaExecute
         - Version: '2012-10-17'
@@ -1006,7 +1004,7 @@ Resources:
       MemorySize: 1024
       Timeout: 30
       Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:10
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:25
       Environment:
         Variables:
           ResultBucket: !Sub '${EvaluationBucket}'
@@ -1026,6 +1024,41 @@ Resources:
                 - glue:BatchCreatePartition
               Resource: "*"
 
+  RESTAPIStartSF:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+
+  RESTAPIStartSFLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: llm_eval_solution_start_sf
+      Handler: start_sf.lambda_handler
+      Runtime: python3.9
+      CodeUri: ../lambda
+      MemorySize: 1024
+      Timeout: 30
+      Environment:
+        Variables:
+          INVOKE_STATE_MACHINE_ARN: !Ref InvokeLLMStateMachine
+          EVALUATE_STATE_MACHINE_ARN: !Ref EvaluateLLMStateMachine
+      Policies:
+        - AWSLambdaExecute
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - states:StartExecution
+              Resource:
+                - !Ref InvokeLLMStateMachine
+                - !Ref EvaluateLLMStateMachine
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /startsf
+            Method: POST
+            RestApiId: !Ref RESTAPIStartSF
 
   SolutionTableDDB:
     Type: AWS::DynamoDB::Table
@@ -1065,10 +1098,153 @@ Resources:
         WriteCapacityUnits: "5"
       TableName: "api-layer-ddb"
 
-
   ResultDatabase:
     Type: AWS::Glue::Database
     Properties:
       CatalogId: !Ref AWS::AccountId
       DatabaseInput:
         Name: "llmeval_result"
+
+
+  DataAccessPolicy:
+    Type: 'AWS::OpenSearchServerless::AccessPolicy'
+    Properties:
+      Name: kbcollection-access-policy
+      Type: data
+      Description: Access policy for kbcollection collection
+      Policy: !Sub >-
+        [{"Description":"Access for cfn user","Rules":[{"ResourceType":"index","Resource":["index/*/*"],"Permission":["aoss:*"]},
+        {"ResourceType":"collection","Resource":["collection/kbcollection"],"Permission":["aoss:*"]}],
+        "Principal":["arn:aws:iam::${AWS::AccountId}:role/evaluation-bedrock-kb-role"]}]
+    DependsOn: KnowledgeBaseRole
+  NetworkPolicy:
+    Type: 'AWS::OpenSearchServerless::SecurityPolicy'
+    Properties:
+      Name: kbcollection-network-policy
+      Type: network
+      Description: Network policy for kbcollection collection
+      Policy: >-
+        [{"Rules":[{"ResourceType":"collection","Resource":["collection/kbcollection"]}, {"ResourceType":"dashboard","Resource":["collection/kbcollection"]}],"AllowFromPublic":true}]
+  EncryptionPolicy:
+    Type: 'AWS::OpenSearchServerless::SecurityPolicy'
+    Properties:
+      Name: kbcollection-security-policy
+      Type: encryption
+      Description: Encryption policy for kbcollection collection
+      Policy: >-
+        {"Rules":[{"ResourceType":"collection","Resource":["collection/kbcollection"]}],"AWSOwnedKey":true}
+
+  Collection:
+    Type: 'AWS::OpenSearchServerless::Collection'
+    Properties:
+      Name: kbcollection
+      Type: VECTORSEARCH
+      Description: Collection to holds timeseries data
+    DependsOn: EncryptionPolicy
+
+  ### bedrock knowledge base
+  KnowledgeBaseWithAoss:
+    Type: AWS::Bedrock::KnowledgeBase
+    Properties:
+      Name: "Evaluation-KnowledgeBase"
+      Description: "Evaluation KB"
+      RoleArn: !GetAtt KnowledgeBaseRole.Arn
+      KnowledgeBaseConfiguration:
+        Type: "VECTOR"
+        VectorKnowledgeBaseConfiguration:
+          EmbeddingModelArn: !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v2:0"
+      StorageConfiguration:
+        Type: "OPENSEARCH_SERVERLESS"
+        OpensearchServerlessConfiguration:
+          CollectionArn: !GetAtt Collection.Arn
+          VectorIndexName: "bedrock-knowledge-base-default-index"
+          FieldMapping:
+            VectorField: "bedrock-knowledge-base-default-vector"
+            TextField: "AMAZON_BEDROCK_TEXT_CHUNK"
+            MetadataField: "AMAZON_BEDROCK_METADATA"
+
+  KnowledgeBaseDataSource:
+    Type: AWS::Bedrock::DataSource
+    Properties:
+      KnowledgeBaseId: !Ref KnowledgeBaseWithAoss
+      Name: "Evaluation-KnowledgeBaseDataSource"
+      Description: "Evaluation-KnowledgeBase data soruce"
+      DataSourceConfiguration:
+        Type: "S3"
+        S3Configuration:
+          BucketArn:
+            !Join
+            - ''
+            - - 'arn:aws:s3:::'
+              - !Ref EvaluationBucket
+          InclusionPrefixes: [ "knowledgesource/" ]
+
+  KnowledgeBaseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: evaluation-bedrock-kb-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - !Ref KnowledgeBaseRolePolicy
+        # it looks like it needs some permission i don't know so at the moment deploy with admin
+        - 'arn:aws:iam::aws:policy/AdministratorAccess'
+
+  KnowledgeBaseRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'opensearchserverless:BatchGetDocuments'
+              - 'opensearchserverless:BatchPutDocuments'
+              - 'opensearchserverless:DeleteCollection'
+              - 'opensearchserverless:DeleteDocument'
+              - 'opensearchserverless:DescribeCollection'
+              - 'opensearchserverless:DescribeDocumentPath'
+              - 'opensearchserverless:GetDocument'
+              - 'opensearchserverless:ListCollections'
+              - 'opensearchserverless:ListDocumentPaths'
+              - 'opensearchserverless:UpdateCollection'
+            Resource: ["*"] #!GetAtt OpenSearchCollection.Arn
+
+#REGAS related resource
+  REGASLambdaEvaluation:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: llm_eval_solution_regas_evaluation
+      Handler: evaluate_ragas_handler.lambda_handler
+      Runtime: python3.9
+      CodeUri: ../lambda
+      MemorySize: 10240
+      Timeout: 900
+      EphemeralStorage:
+        Size: 1024
+      Environment:
+        Variables:
+          LIB_BUCKET: !Sub 'eval-${AWS::AccountId}-${AWS::Region}'
+          RESULT_BUCKET: !Sub '${EvaluationBucket}'
+          LIB_FILE: "lambda_extra_package.zip"
+          KB_ID: !Ref KnowledgeBaseWithAoss
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - AmazonS3FullAccess
+        - AmazonBedrockFullAccess
+
+Outputs:
+
+  KnowledgeBaseWithAoss:
+    Value: !Ref KnowledgeBaseWithAoss
+  KnowledgeBaseDataSource:
+    Value: !GetAtt KnowledgeBaseDataSource.DataSourceId
+
+
+
+
