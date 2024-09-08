@@ -536,7 +536,7 @@ Resources:
                     }
                   },
                   "ItemsPath": "$.result",
-                  "MaxConcurrency": 5,
+                  "MaxConcurrency": 3,
                   "Next": "InvokeSummary"
                 },
                 "InvokeSummary": {
@@ -570,6 +570,7 @@ Resources:
             InvokeSummaryLambdaArn: !GetAtt InvokeResultSummary.Arn
           }
       RoleArn: !GetAtt LLMInvocationStatesExecutionRole.Arn
+
   LLMIEvaluationStatesExecutionRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -632,13 +633,74 @@ Resources:
                       "Variable": "$.method",
                       "StringMatches": "fmeval",
                       "Next": "FMEval_input_processor"
+                    },
+                    {
+                      "Variable": "$.method",
+                      "StringMatches": "ragaseval",
+                      "Next": "RAGASEval_input_preprocess"
                     }
                   ],
-                  "Default": "Pass"
+                  "Default": "LLMEval_input_process"
                 },
-                "Pass": {
-                  "Type": "Pass",
-                  "End": true
+                "RAGASEval_input_preprocess": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "OutputPath": "$.Payload",
+                  "Parameters": {
+                    "Payload.$": "$",
+                    "FunctionName": "${RAGSEvalInputPreprocessorArn}"
+                  },
+                  "Retry": [
+                    {
+                      "ErrorEquals": [
+                        "Lambda.ServiceException",
+                        "Lambda.AWSLambdaException",
+                        "Lambda.SdkClientException",
+                        "Lambda.TooManyRequestsException"
+                      ],
+                      "IntervalSeconds": 1,
+                      "MaxAttempts": 3,
+                      "BackoffRate": 2
+                    }
+                  ],
+                  "Next": "RAGASMap"
+                },
+                "RAGASMap": {
+                  "Type": "Map",
+                  "ItemProcessor": {
+                    "ProcessorConfig": {
+                      "Mode": "INLINE"
+                    },
+                    "StartAt": "RAGAS_Evaluation",
+                    "States": {
+                      "RAGAS_Evaluation": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::lambda:invoke",
+                        "OutputPath": "$.Payload",
+                        "Parameters": {
+                          "Payload": {
+                            "executionId.$": "$$.Execution.Id",
+                            "input.$": "$"
+                          },
+                          "FunctionName": "${RAGSEvaluationArn}"
+                        },
+                        "Retry": [
+                          {
+                            "ErrorEquals": [
+                              "States.ALL"
+                            ],
+                            "IntervalSeconds": 1,
+                            "MaxAttempts": 3,
+                            "BackoffRate": 2
+                          }
+                        ],
+                        "End": true
+                      }
+                    }
+                  },
+                  "End": true,
+                  "MaxConcurrency": 3,
+                  "ItemsPath": "$.result"
                 },
                 "LLMEval_input_process": {
                   "Type": "Task",
@@ -646,7 +708,7 @@ Resources:
                   "OutputPath": "$.Payload",
                   "Parameters": {
                     "Payload.$": "$",
-                    "FunctionName":"${LLMEvalInputProcessorLambdaArn}"
+                    "FunctionName": "${LLMEvalInputProcessorLambdaArn}"
                   },
                   "Retry": [
                     {
@@ -672,7 +734,7 @@ Resources:
                         "Type": "Task",
                         "Resource": "arn:aws:states:::lambda:invoke",
                         "Parameters": {
-                          "FunctionName":"${LLMEvalLambdaArn}",
+                          "FunctionName": "${LLMEvalLambdaArn}",
                           "Payload": {
                             "execution_id.$": "$$.Execution.Id",
                             "input.$": "$"
@@ -720,7 +782,7 @@ Resources:
                       "executionId.$": "$$.Execution.Id",
                       "input.$": "$"
                     },
-                    "FunctionName":"${EvaluateLLMSummaryArn}"
+                    "FunctionName": "{EvaluateLLMSummaryArn}"
                   },
                   "Retry": [
                     {
@@ -740,7 +802,7 @@ Resources:
                   "OutputPath": "$.Payload",
                   "Parameters": {
                     "Payload.$": "$",
-                    "FunctionName":"${FMEvalValidationInputArn}"
+                    "FunctionName": "{FMEvalValidationInputArn}"
                   },
                   "Retry": [
                     {
@@ -769,7 +831,7 @@ Resources:
                         "Type": "Task",
                         "Resource": "arn:aws:states:::lambda:invoke",
                         "Parameters": {
-                          "FunctionName":"${EvaluateMetricArn}",
+                          "FunctionName": "{EvaluateMetricArn}",
                           "Payload.$": "$"
                         },
                         "Retry": [
@@ -801,7 +863,9 @@ Resources:
             LLMEvalLambdaArn: !GetAtt EvaluateLLM.Arn,
             EvaluateLLMSummaryArn: !GetAtt EvaluationResultSummary.Arn,
             FMEvalValidationInputArn: !GetAtt FMEvalValidationInput.Arn,
-            EvaluateMetricArn: !GetAtt EvaluateMetric.Arn
+            EvaluateMetricArn: !GetAtt EvaluateMetric.Arn,
+            RAGSEvaluationArn: !GetAtt REGASLambdaEvaluation.Arn,
+            RAGSEvalInputPreprocessorArn: !GetAtt REGASLambdaEvaluationPreprocess.Arn
           }
       RoleArn: !GetAtt LLMIEvaluationStatesExecutionRole.Arn
   InvokeLLM:
@@ -809,7 +873,7 @@ Resources:
     Properties:
       FunctionName: invoke_llm_lambda
       Handler: invoke_llm_handler.handler
-      Runtime: python3.9
+      Runtime: python3.11
       CodeUri: ../lambda
       MemorySize: 10240
       VpcConfig:
@@ -818,7 +882,7 @@ Resources:
           - !Ref PrivateSubnetB
         SecurityGroupIds:
           - !Ref SecurityGroup
-      Timeout: 100
+      Timeout: 900
       EphemeralStorage:
         Size: 1024
       Environment:
@@ -829,7 +893,7 @@ Resources:
           LIB_FILE: "lambda_extra_package.zip"
           KB_ID: !Ref KnowledgeBaseWithAoss
       Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:25
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python311:17
       Policies:
         - AWSLambdaVPCAccessExecutionRole
         - Version: '2012-10-17'
@@ -1221,7 +1285,7 @@ Resources:
     Properties:
       FunctionName: llm_eval_solution_regas_evaluation
       Handler: evaluate_ragas_handler.lambda_handler
-      Runtime: python3.9
+      Runtime: python3.11
       CodeUri: ../lambda
       MemorySize: 10240
       Timeout: 900
@@ -1230,13 +1294,62 @@ Resources:
       Environment:
         Variables:
           LIB_BUCKET: !Sub 'eval-${AWS::AccountId}-${AWS::Region}'
-          RESULT_BUCKET: !Sub '${EvaluationBucket}'
           LIB_FILE: "lambda_extra_package.zip"
+          RESULTBUCKET: !Sub '${EvaluationBucket}'
+          ResultDatabase: !Ref ResultDatabase
           KB_ID: !Ref KnowledgeBaseWithAoss
       Policies:
         - AWSLambdaBasicExecutionRole
         - AmazonS3FullAccess
         - AmazonBedrockFullAccess
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - glue:GetTable
+                - glue:GetDatabase
+                - glue:CreateTable
+                - glue:UpdateTable
+                - glue:BatchCreatePartition
+              Resource: "*"
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python311:17
+
+  REGASLambdaEvaluationPreprocess:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ragaseval_input_preprocess
+      Handler: ragaseval_input_preprocess.lambda_handler
+      Runtime: python3.11
+      CodeUri: ../lambda
+      MemorySize: 10240
+      Timeout: 900
+      EphemeralStorage:
+        Size: 1024
+      Environment:
+        Variables:
+          LIB_BUCKET: !Sub 'eval-${AWS::AccountId}-${AWS::Region}'
+          LIB_FILE: "lambda_extra_package.zip"
+          RESULTBUCKET: !Sub '${EvaluationBucket}'
+          ResultDatabase: !Ref ResultDatabase
+          KB_ID: !Ref KnowledgeBaseWithAoss
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - AmazonS3FullAccess
+        - AmazonBedrockFullAccess
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - glue:GetTable
+                - glue:GetDatabase
+                - glue:CreateTable
+                - glue:UpdateTable
+                - glue:BatchCreatePartition
+              Resource: "*"
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python311:17
+
 
 Outputs:
 

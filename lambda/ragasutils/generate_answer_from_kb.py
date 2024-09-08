@@ -3,6 +3,7 @@ from botocore.client import Config
 from langchain_aws.chat_models.bedrock import ChatBedrock
 from langchain_aws.retrievers.bedrock import AmazonKnowledgeBasesRetriever
 from langchain.chains import RetrievalQA
+from datasets import Dataset
 
 class KnowledgeBasesGenerateAnswer:
     def __init__(self, model_id: str, KB_ID: str):
@@ -24,15 +25,30 @@ class KnowledgeBasesGenerateAnswer:
             return_source_documents=True)
 
 
+    def prepare_evaluation_dataset(self, questions, ground_truths):
+        generated_answers = []
+        contexts = []
+        for query in questions:
+            generated_answers.append(self.qa_chain.invoke(query)["result"])
+            contexts.append([docs.page_content for docs in self.retriever.invoke(query)])
+        # To dict
+        data = {
+            "question": questions,
+            "answer": generated_answers,
+            "contexts": contexts,
+            "ground_truth": ground_truths
+        }
+        # Convert dict to dataset
+        return data
+
     def get_answer_and_context(self, question):
         answer = self.qa_chain.invoke(question)["result"]
 
         contexts = [docs.page_content for docs in self.retriever.invoke(question)]
-        # To dict
-        delimiter = '\u00A0'  # Non-breaking space
+
         data = {
             "answer": answer,
-            "context": delimiter.join(contexts),
+            "context": contexts,
         }
 
         return data

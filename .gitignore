@@ -1,3 +1,5 @@
 .idea
 **.aws-sam/
 **packaged.yaml
+.venv
+tests

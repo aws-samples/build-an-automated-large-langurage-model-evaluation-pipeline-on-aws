@@ -3,6 +3,7 @@ from botocore.client import Config
 from langchain_aws.chat_models.bedrock import ChatBedrock
 from langchain_aws.embeddings.bedrock import BedrockEmbeddings
 from ragas import evaluate as ragas_evaluate
+from ragas import RunConfig
 
 class KnowledgeBasesEvaluations:
     def __init__(self, model_id_eval: str):
@@ -18,8 +19,11 @@ class KnowledgeBasesEvaluations:
         self.dataset = None
 
     def evaluate(self, dataset, metrics):
+
+        run_config = RunConfig(timeout=240)
         self.evaluation_results = ragas_evaluate(dataset=dataset,
                                            metrics=metrics,
                                            llm=self.llm_for_evaluation,
-                                           embeddings=self.bedrock_embeddings)
+                                           embeddings=self.bedrock_embeddings,
+                                           run_config=run_config)
         return self.evaluation_results.to_pandas()
