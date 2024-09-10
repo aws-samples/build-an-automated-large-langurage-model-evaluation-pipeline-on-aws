@@ -41,7 +41,6 @@ def convert_to_dataset(content):
     dataset = Dataset.from_dict(data)
     return dataset
 
-MODEL_ID_EVAL = "anthropic.claude-3-sonnet-20240229-v1:0"
 
 available_metrics = {
     "faithfulness": faithfulness,
@@ -51,7 +50,7 @@ available_metrics = {
 }
 
 def lambda_handler(event, context):
-
+    evaluation_model_name = event['input']['model_name']
     execution_id = event['executionId'].split(":")[-1]
     bucket = event['input']['evaluation_location'].split('/')[2]
     key = '/'.join(event['input']['evaluation_location'].split('/')[3:])
@@ -59,9 +58,8 @@ def lambda_handler(event, context):
 
     evaluation_metric = [available_metrics[metric] for metric in metrics]
 
-    print(bucket, key)
     path = f"s3://{bucket_name}/ragaseval_result/"
-    print(path)
+
     # download the pickle file from s3
     s3.download_file(bucket, key, "/tmp/result.pickle")
 
@@ -70,9 +68,10 @@ def lambda_handler(event, context):
 
     dataset = convert_to_dataset(content)
 
-    evaluator = KnowledgeBasesEvaluations(MODEL_ID_EVAL)
+    evaluator = KnowledgeBasesEvaluations(evaluation_model_name)
     result_df = evaluator.evaluate(dataset, metrics=evaluation_metric)
     result_df['execution_id'] = execution_id
+    result_df['question_id'] = content['id']
 
     # if any of the available metrics is missing, add it with a default value of null and cast to double
     for metric in available_metrics:

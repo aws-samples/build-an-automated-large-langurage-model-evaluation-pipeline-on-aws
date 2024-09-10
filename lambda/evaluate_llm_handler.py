@@ -1,18 +1,25 @@
+from ragasutils.prepare_environment import prepare_environment
+import sys
+
+directory_to_extract_to = prepare_environment()
+# update path, so that dependencies can be found
+sys.path.insert(0, directory_to_extract_to)
+
 from prompts.store import TemplateStore
 from handlers.utils.evaluation_util import EvaluationUtils
 import pandas as pd
+import numpy as np
 import boto3
 import json
 import random
 import os
 import logging
+import pickle
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 prompt_template_database = TemplateStore()
-
-from importlib import import_module
-from prompts.template import PromptTemplate
 
 from metrics.survey import SurveyMetric
 from metrics.cosine import CosineMetric
@@ -20,10 +27,40 @@ from prompts.template import PromptTemplate
 import awswrangler as wr
 import time
 
+available_metrics = [
+        "Cosine Metric",
+        "Accuracy Check",
+        "Compact Check",
+        "Form Check",
+        "Redundancy Check",
+        "Relevancy Check",
+        "Sanity Check",
+    ]
+
+s3 = boto3.client('s3')
+bucket_name = os.getenv("ResultBucket")
+database_name = os.getenv("ResultDatabase")
+
 
 def handler(event, context):
     logger.info(f"receiving event {event}")
-    bucket_name = os.getenv("ResultBucket")
+
+    execution_id = event['execution_id'].split(":")[-1]
+    bucket = event['input']['evaluation_location'].split('/')[2]
+    key = '/'.join(event['input']['evaluation_location'].split('/')[3:])
+    model_family = event['input']['model_family']
+    model_name = event['input']['model_name']
+    metrics = event['input']['evaluation_metrics']
+
+
+    path = f"s3://{bucket_name}/llmeval_result/"
+
+    # download the pickle file from s3
+    s3.download_file(bucket, key, "/tmp/result.pickle")
+
+    with open("/tmp/result.pickle", 'rb') as handle:
+        dataset = pickle.load(handle)
+
     # Add Prompt Template to the database.
     p_template = PromptTemplate(
         template="""Human: The following is a conversation between a highly knowledgeable and intelligent AI assistant, called Assistant, and a Human user asking Questions. In the following interactions, Assistant will converse in natural language, and Assistant will answer the questions based only on the provided Context. Assistant will provide accurate, short and direct answers to the questions. Answer the below question based on the provided Context, Inquiry and Response.
@@ -39,13 +76,6 @@ Assistant: """,
         template_id="00002",
         template=p_template
     )
-
-    execution_id = event['execution_id'].split(":")[-1]
-    event = event["input"]
-
-    logger.info(f"event input: {event}")
-
-    metrics = event['evaluation_metrics']
 
     evaluation_utils = EvaluationUtils("SolutionTableDDB")
 
@@ -64,8 +94,8 @@ Assistant: """,
             metrics_to_evaluate.append({
                 "metric_name": metric,
                 "scoring_object": SurveyMetric(
-                    model_family=event["model_family"],
-                    model_name=event["model_name"],
+                    model_family=model_family,
+                    model_name=model_name,
                     prompt_template=p_template,
                     questions=[evaluation_utils.get_question_by_simple_metric(metric)]
                 )
@@ -87,55 +117,66 @@ Assistant: """,
             metrics_to_evaluate.append({
                 "metric_name": metric,
                 "scoring_object": SurveyMetric(
-                    model_family=event["model_family"],
-                    model_name=event["model_name"],
+                    model_family=model_family,
+                    model_name=model_name,
                     prompt_template=p_template,
                     questions=evaluation_utils.get_question_by_composed_metric(metric)
                 )
             })
 
-
     logger.info("begin evaluation")
     eval_data = []
-    question_answer = event['evaluation_question_answer'].replace("'",'"')
-    model_family = event['model_family']
-    model_name = event['model_name']
 
-    dataset = json.loads(question_answer)
+
     evals = []
     for metric_ in metrics_to_evaluate:
         # as we use bedrock but it got throttled, we put some sleep time to reduce the tps
-        time.sleep(random.randint(0,10))
+        time.sleep(random.randint(0,20))
         metric = metric_["scoring_object"]
         logger.info(f"evaluating metric {metric_['metric_name']}")
         if isinstance(metric, SurveyMetric):
             logger.info("this is a survey metric")
             param_values = {
-                "CONTEXT": dataset['CONTEXT'],
-                "INQUIRY": dataset['QUESTION'],
-                "RESPONSE": dataset['Response']
+                "CONTEXT": "".join(dataset['contexts'][0]),
+                "INQUIRY": dataset['question'][0],
+                "RESPONSE": dataset['answer'][0]
             }
         if isinstance(metric, CosineMetric):
             logger.info("this is a cosine metric")
             param_values = {
-                "text1": dataset["Response"],
-                "text2": dataset["ExpectedAnswer"]
+                "text1": dataset["answer"][0],
+                "text2": dataset["ground_truth"][0]
             }
         score = metric.score(param_values=param_values)
         evals.append({"Key": metric_["metric_name"], "Value": score})
+
     eval_data.append(
         {
-            "id": dataset["id"],
-            "QUESTION": dataset["QUESTION"],
-            # "CONTEXT": dataset["CONTEXT"][ind],
-            # "Expected Answer": dataset["Expected Answer"][ind],
-            # "Response": dataset["Response"][ind],
+            # "id": dataset["id"],
+            "QUESTION": dataset['question'][0],
             "EVAL_MODEL": f'{model_family}~{model_name}'
         }
     )
     for _eval in evals:
         eval_data[-1][_eval["Key"]] = _eval["Value"]
     eval_dataset = pd.DataFrame(eval_data)
-    output_string = eval_dataset.to_csv(sep='|', index=False, header=False)
-    key = f"llm-evaluation/{execution_id}/{model_family}-{model_name}.csv"
-    return output_string
+    eval_dataset['execution_id'] = execution_id
+    path = f"s3://{bucket_name}/llmeval_result/"
+
+    for metric in available_metrics:
+        if metric not in eval_dataset.columns:
+            eval_dataset[metric] = np.nan
+            eval_dataset[metric] = eval_dataset[metric].astype('float64')
+
+    wr.s3.to_parquet(
+        df=eval_dataset,
+        path=path,
+        index=False,
+        dataset=True,
+        mode="append",
+        database=database_name,
+        partition_cols=['execution_id'],
+        table="llmeval_result"
+    )
+
+    return path

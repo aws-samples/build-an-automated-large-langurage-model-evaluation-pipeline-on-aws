@@ -699,7 +699,7 @@ Resources:
                     }
                   },
                   "End": true,
-                  "MaxConcurrency": 3,
+                  "MaxConcurrency": 2,
                   "ItemsPath": "$.result"
                 },
                 "LLMEval_input_process": {
@@ -770,31 +770,8 @@ Resources:
                     }
                   },
                   "ItemsPath": "$.result",
-                  "Next": "LLMEval_summarize_result",
-                  "MaxConcurrency": 10
-                },
-                "LLMEval_summarize_result": {
-                  "Type": "Task",
-                  "Resource": "arn:aws:states:::lambda:invoke",
-                  "OutputPath": "$.Payload",
-                  "Parameters": {
-                    "Payload": {
-                      "executionId.$": "$$.Execution.Id",
-                      "input.$": "$"
-                    },
-                    "FunctionName": "{EvaluateLLMSummaryArn}"
-                  },
-                  "Retry": [
-                    {
-                      "ErrorEquals": [
-                        "States.ALL"
-                      ],
-                      "IntervalSeconds": 1,
-                      "MaxAttempts": 3,
-                      "BackoffRate": 2
-                    }
-                  ],
-                  "End": true
+                  "End": true,
+                  "MaxConcurrency": 1
                 },
                 "FMEval_input_processor": {
                   "Type": "Task",
@@ -802,7 +779,7 @@ Resources:
                   "OutputPath": "$.Payload",
                   "Parameters": {
                     "Payload.$": "$",
-                    "FunctionName": "{FMEvalValidationInputArn}"
+                    "FunctionName": "${FMEvalValidationInputArn}"
                   },
                   "Retry": [
                     {
@@ -831,7 +808,7 @@ Resources:
                         "Type": "Task",
                         "Resource": "arn:aws:states:::lambda:invoke",
                         "Parameters": {
-                          "FunctionName": "{EvaluateMetricArn}",
+                          "FunctionName": "${EvaluateMetricArn}",
                           "Payload.$": "$"
                         },
                         "Retry": [
@@ -861,7 +838,6 @@ Resources:
           - {
             LLMEvalInputProcessorLambdaArn: !GetAtt ValidateLLMEvaluateInput.Arn,
             LLMEvalLambdaArn: !GetAtt EvaluateLLM.Arn,
-            EvaluateLLMSummaryArn: !GetAtt EvaluationResultSummary.Arn,
             FMEvalValidationInputArn: !GetAtt FMEvalValidationInput.Arn,
             EvaluateMetricArn: !GetAtt EvaluateMetric.Arn,
             RAGSEvaluationArn: !GetAtt REGASLambdaEvaluation.Arn,
@@ -934,9 +910,11 @@ Resources:
     Properties:
       FunctionName: evaluate_llm_lambda
       Handler: evaluate_llm_handler.handler
-      Runtime: python3.9
+      Runtime: python3.11
       CodeUri: ../lambda
-      MemorySize: 1024
+      MemorySize: 10240
+      EphemeralStorage:
+        Size: 1024
       VpcConfig:
         SubnetIds:
           - !Ref PrivateSubnetA
@@ -947,9 +925,12 @@ Resources:
         Variables:
           ResultBucket: !Sub '${EvaluationBucket}'
           LLMEndpoint: !Sub "http://${LLMInternalALB.DNSName}:8001/invoke"
+          LIB_BUCKET: !Sub 'eval-${AWS::AccountId}-${AWS::Region}'
+          LIB_FILE: "lambda_extra_package.zip"
+          ResultDatabase: !Ref ResultDatabase
       Timeout: 200
       Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:25
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python311:17
       Policies:
         - AWSLambdaVPCAccessExecutionRole
         - Version: '2012-10-17'
@@ -962,6 +943,11 @@ Resources:
                 - sagemaker:*
                 - dynamodb:GetItem
                 - dynamodb:Query
+                - glue:GetTable
+                - glue:GetDatabase
+                - glue:CreateTable
+                - glue:UpdateTable
+                - glue:BatchCreatePartition
               Resource: "*"
 
 

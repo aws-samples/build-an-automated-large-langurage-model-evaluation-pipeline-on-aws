@@ -95,14 +95,6 @@ def handler(event, context):
     with open(file, 'wb') as handle:
         pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    if os.path.exists(file):
-        print(f"File: {os.path.basename(file)}")
-        print(f"Size: {os.path.getsize(file)} bytes")
-        print(f"Last modified: {os.path.getmtime(file)}")
-        print(f"Is file: {os.path.isfile(file)}")
-        print(f"Is directory: {os.path.isdir(file)}")
-    else:
-        print(f"The file {file} does not exist.")
 
     print(f"upload file {file} to {bucket_name} in {key}")
     s3.upload_file(file, bucket_name, key)

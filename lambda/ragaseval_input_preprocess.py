@@ -14,9 +14,10 @@ def read_jsonl_generator(file_path):
 
 
 def lambda_handler(event, context):
-    print(event)
+
     available_metrics = [
         "faithfulness",
+        "answer_relevancy",
         "context_precision",
         "context_recall"
     ]
@@ -30,7 +31,7 @@ def lambda_handler(event, context):
             evaluation_metrics.remove(metric)
 
     if len(evaluation_metrics) == 0:
-        evaluation_metrics = available_metrics
+        return "No valid evaluation metric"
 
     # handle the s3 location
     if "evaluation_location" not in event:
@@ -46,31 +47,33 @@ def lambda_handler(event, context):
     # download the jsonl file from s3 and split them into pickle files
     s3_client.download_file(bucket, key, '/tmp/input.jsonl')
     pickle_list = []
-    index = 0
+
     for item in read_jsonl_generator('/tmp/input.jsonl'):
         # Process each item (dictionary) here
+        id = item["id"][0]
         data = {
+            "id":  item["id"][0],
             "question": item["QUESTION"],
-            "answer": item['ExpectedAnswer'],
+            "answer": item['Response'],
             "contexts": item['CONTEXT'],
-            "ground_truth": item['Response']
+            "ground_truth": item['ExpectedAnswer']
         }
-        print(data)
-        file = f'/tmp/ragas_{index}.pkl'
-        target_key = f'{key_path}/ragas_{index}.pkl'
+
+        file = f'/tmp/ragas_{id}.pkl'
+        target_key = f'{key_path}/ragas_{id}.pkl'
 
         with open(file, 'wb') as handle:
             pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
             s3_client.upload_file(file, bucket, target_key)
         pickle_list.append(f"s3://{bucket}/{target_key}")
 
-        index += 1
 
     result = [{"evaluation_metrics": evaluation_metrics,
                "model_name": event['evaluation_model_name'],
                "evaluation_location": eachline} for eachline in pickle_list]
     print(result)
     return {"result": result}
+
 
 
 def parse_s3_location(location):
