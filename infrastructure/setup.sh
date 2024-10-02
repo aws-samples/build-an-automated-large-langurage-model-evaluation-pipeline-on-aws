@@ -24,6 +24,35 @@ else
   echo "Bucket $BUCKET already exists, using the bucket"
 fi
 
+cd custom_resource
+
+# Install the required packages into a directory named 'package'
+pip install -r requirements.txt -t package
+
+# Navigate to the package directory
+cd package
+
+# Copy the lambda_handler.py into the package directory
+cp ../lambda_function.py .
+
+# Zip the contents of the package directory into a file named lambda_function.zip
+zip -r ../lambda_function.zip .
+
+# Navigate back to the custom_resource directory
+cd ..
+
+## Clean up by removing the package directory
+rm -rf package
+
+echo "Lambda function package created: custom_resource/lambda_function.zip"
+
+# copy to s3 as package
+aws s3 cp lambda_function.zip s3://$BUCKET/custom_resource/lambda_function.zip
+
+# clean up the zip file
+rm lambda_function.zip
+
+cd ..
 
 # Export bucket name as environment variable
 export EVAL_PIPELINE_BUCKET=$BUCKET

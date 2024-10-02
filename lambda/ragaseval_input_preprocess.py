@@ -26,9 +26,7 @@ def lambda_handler(event, context):
     if "evaluation_model_name" not in event:
         raise Exception("no evaluation_model_name in event")
 
-    for metric in evaluation_metrics:
-        if metric not in available_metrics:
-            evaluation_metrics.remove(metric)
+    metrics = [metric for metric in evaluation_metrics if metric in available_metrics]
 
     if len(evaluation_metrics) == 0:
         return "No valid evaluation metric"
@@ -68,7 +66,7 @@ def lambda_handler(event, context):
         pickle_list.append(f"s3://{bucket}/{target_key}")
 
 
-    result = [{"evaluation_metrics": evaluation_metrics,
+    result = [{"evaluation_metrics": metrics,
                "model_name": event['evaluation_model_name'],
                "evaluation_location": eachline} for eachline in pickle_list]
     print(result)

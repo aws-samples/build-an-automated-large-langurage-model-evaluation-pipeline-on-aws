@@ -1,20 +1,22 @@
 import boto3
+import json
 from handlers.utils.evaluation_util import EvaluationUtils
 
 s3_client = boto3.client('s3')
 evaluation_utils = EvaluationUtils("SolutionTableDDB")
 
+def read_jsonl_generator(file_path):
+    with open(file_path, 'r') as jsonl_file:
+        for line in jsonl_file:
+            yield json.loads(line.strip())
 
 def handler(event, context):
     available_metrics = evaluation_utils.get_fmeval_metric()
+
     evaluation_metrics = event.get("evaluation_metrics", [])
 
-    for metric in evaluation_metrics:
-        if metric not in available_metrics:
-            evaluation_metrics.remove(metric)
+    metrics = [metric for metric in evaluation_metrics if metric in available_metrics]
 
-    if len(evaluation_metrics) == 0:
-        evaluation_metrics = available_metrics
 
     # handle the s3 location
     if "evaluation_location" not in event:
@@ -31,7 +33,29 @@ def handler(event, context):
         raise Exception("instance_type is required")
     instance_type = event["instance_type"]
 
-    return {"result": [{"metric": metric, "evaluation_location": s3_location, "instance_type": instance_type} for metric in evaluation_metrics]}
+    # download the file and convert the format
+    s3_client.download_file(bucket, key, '/tmp/input.jsonl')
+    updated_items = []
+    for item in read_jsonl_generator('/tmp/input.jsonl'):
+        context = item["CONTEXT"]
+
+        context_string = ". ".join([item[0] for item in context])
+        updated_item = {'id': item['id'][0],
+                        'QUESTION': item['QUESTION'][0],
+                        'CONTEXT': context_string,
+                        'ExpectedAnswer': item['ExpectedAnswer'][0],
+                        'Response': item['Response'][0]}
+        updated_items.append(updated_item)
+
+    with open('/tmp/result_updated.jsonl', 'w') as jsonl_file:
+        for item in updated_items:
+            jsonl_file.write(json.dumps(item) + '\n')
+
+    key = key.replace(".jsonl", "_updated.jsonl")
+    s3_client.upload_file('/tmp/result_updated.jsonl', bucket, key)
+    return {"result": [{"metric": metric,
+                        "evaluation_location": f"s3://{bucket}/{key}",
+                        "instance_type": instance_type} for metric in metrics]}
 
 
 def parse_s3_location(location):
@@ -61,4 +85,3 @@ def object_exists(s3_client, bucket, key):
         return True
     except s3_client.exceptions.ClientError as e:
         return False
-

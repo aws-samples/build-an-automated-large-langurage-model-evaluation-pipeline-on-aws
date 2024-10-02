@@ -57,6 +57,7 @@ def get_answer_from_api(model_family, model_name, context, question):
 
 
 def handler(event, context):
+    print(event)
     prompt = event['prompt']
     model_family = event['model_family']
     model_name = event['model_name']
@@ -83,18 +84,22 @@ def handler(event, context):
         answer_and_context = kb_generate_answer.get_answer_and_context(question)
         answer = answer_and_context['answer']
         context = answer_and_context['context']
+        context_list = [[c] for c in context]
     else:
         raise ValueError("Invalid generation method")
 
-    data = {'id': [question_id], 'QUESTION': [question], 'CONTEXT': [context],
-            'ExpectedAnswer': [expected_answer], 'Response': [answer]}
-    # save as a pickle file
+    if generation_method == "native":
+        data = {'id': [question_id], 'QUESTION': [question], 'CONTEXT': [[context]],
+                'ExpectedAnswer': [expected_answer], 'Response': [answer]}
+    else:
+        data = {'id': [question_id], 'QUESTION': [question], 'CONTEXT': context_list,
+                'ExpectedAnswer': [expected_answer], 'Response': [answer]}
+
     file_name = f"{prompts_list[0]}_{model_family}-{model_name}.pickle"
     file = f"/tmp/{file_name}"
     key = f"llm-response/{execution_id}/{file_name}"
     with open(file, 'wb') as handle:
         pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
 
     print(f"upload file {file} to {bucket_name} in {key}")
     s3.upload_file(file, bucket_name, key)

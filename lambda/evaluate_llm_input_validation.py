@@ -33,10 +33,7 @@ def handler(event, context):
     if "evaluation_model_name" not in event:
         raise Exception("no evaluation_model_name in event")
 
-    for metric in evaluation_metrics:
-        if metric not in available_metrics:
-            evaluation_metrics.remove(metric)
-    print("evaluation_metrics:", evaluation_metrics)
+    metrics = [metric for metric in evaluation_metrics if metric in available_metrics]
 
     s3_location = event["evaluation_location"]
 
@@ -68,11 +65,11 @@ def handler(event, context):
 
         index += 1
 
-    result = [{"evaluation_metrics": evaluation_metrics,
+    result = [{"evaluation_metrics": metrics,
                "model_family": event['evaluation_model_family'],
                "model_name": event['evaluation_model_name'],
                "evaluation_location": eachline} for eachline in pickle_list]
-    print(result)
+
     return {"result": result}
 
 def parse_s3_location(location):

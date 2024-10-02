@@ -41,7 +41,6 @@ def handler(event, context):
     # handle the failed result for re-use
     if len(failed_result) > 0:
         split_data = [item.split('|') for item in failed_result]
-        print(len(split_data))
         # write the failed_result to S3
         wr.s3.to_csv(df=pd.DataFrame(split_data, columns=columns),
                      path=f's3://{result_bucket}/invoke_failed_result/{execution_id}/failed_question.csv', header=True,
