@@ -20,39 +20,30 @@ import awswrangler as wr
 prompt_template_database = TemplateStore()
 
 from prompts.template import PromptTemplate
-from llm_api.invoke_llm import get_llm_result
+from llm_api.invoke_llm import generate_result
 
 # setup environment variables
 bucket_name = os.environ.get('ResultBucket')
 kb_id = os.environ.get('KB_ID')
 
 s3 = boto3.client('s3')
+bedrock_client = boto3.client(service_name='bedrock-runtime')
 
+def get_answer_from_api(model_name, context, question):
 
-def get_answer_from_api(model_family, model_name, context, question):
-    p_template = PromptTemplate(
-        template="""Human: Use the following pieces of context to provide a concise answer to the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer.
-    {CONTEXT}
+    system_prompts = [{"text": "You are an smart AI assistant to provide a concise answer to the question to user, use the context provided, If you don't know the answer, just say that you don't know, don't try to make up an answer. Below is the context"
+              f"{context}"}]
 
-    Question: {Question_text}
-    Assistant:""",
-        params=["CONTEXT", "Question_text"]
-    )
+    message = {
+        "role": "user",
+        "content": [{"text": question}]
+    }
 
-    prompt_template_database.add_template(
-        template_id="00001",
-        template=p_template
-    )
+    messages = []
+    messages.append(message)
 
-    payload = prompt_template_database.get_prompt_from_template(
-        template_id="00001",
-        param_values={
-            "CONTEXT": f"CONTEXT: {context}",
-            "Question_text": f"{question}"
-        }
-    )
+    answer = generate_result(bedrock_client, model_name, system_prompts, messages)
 
-    answer = get_llm_result(payload, model_family, model_name)
     return answer
 
 
@@ -74,7 +65,7 @@ def handler(event, context):
     if generation_method == "native":
         # add some idle time to reduce the throttle possibility
         time.sleep(random.randint(0, 10))
-        answer = get_answer_from_api(model_family, model_name, context, question)
+        answer = get_answer_from_api(model_name, context, question)
     elif generation_method == "kb":
         # add some idle time to reduce the throttle possibility
         time.sleep(random.randint(0, 20))

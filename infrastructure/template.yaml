@@ -12,25 +12,6 @@ Parameters:
     MinLength: '1'
     Type: String
     Default: LLM-Eval
-  ECSClusterName:
-    Type: String
-    Description: Specifies the ECS Cluster Name with which the resources would be associated
-    Default: llm-eval-api-cluster
-  VpcCIDR:
-    Type: String
-    Default: 10.2.0.0/16
-  PublicSubnetCIDRA:
-    Type: String
-    Default: 10.2.0.0/24
-  PrivateSubnetCIDRA:
-    Type: String
-    Default: 10.2.1.0/24
-  PublicSubnetCIDRB:
-    Type: String
-    Default: 10.2.2.0/24
-  PrivateSubnetCIDRB:
-    Type: String
-    Default: 10.2.3.0/24
   TrainingURL:
     Type: String
     Description: the training image
@@ -38,218 +19,16 @@ Parameters:
     Type: String
     Default: fmeval
 
+  CollectionName:
+    Type: String
+    Default: knowledgebasecollection
+
+  IndexName:
+    Type: String
+    Default: kbindex
+
 
 Resources:
-  # VPC relates resources
-  VPC:
-    Type: 'AWS::EC2::VPC'
-    Properties:
-      CidrBlock: !Ref VpcCIDR
-      EnableDnsSupport: true
-      EnableDnsHostnames: true
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-vpc'
-  PublicSubnetA:
-    Type: 'AWS::EC2::Subnet'
-    Properties:
-      CidrBlock: !Ref PublicSubnetCIDRA
-      VpcId: !Ref VPC
-      AvailabilityZone: !Sub '${AWS::Region}a'
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-public-subnet-a'
-  PublicSubnetB:
-    Type: 'AWS::EC2::Subnet'
-    Properties:
-      CidrBlock: !Ref PublicSubnetCIDRB
-      VpcId: !Ref VPC
-      AvailabilityZone: !Sub '${AWS::Region}b'
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-public-subnet-b'
-  PrivateSubnetA:
-    Type: 'AWS::EC2::Subnet'
-    Properties:
-      CidrBlock: !Ref PrivateSubnetCIDRA
-      VpcId: !Ref VPC
-      AvailabilityZone: !Sub '${AWS::Region}a'
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-private-subnet-a'
-  PrivateSubnetB:
-    Type: 'AWS::EC2::Subnet'
-    Properties:
-      CidrBlock: !Ref PrivateSubnetCIDRB
-      VpcId: !Ref VPC
-      AvailabilityZone: !Sub '${AWS::Region}b'
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-private-subnet-b'
-  InternetGateway:
-    Type: 'AWS::EC2::InternetGateway'
-  AttachGateway:
-    Type: 'AWS::EC2::VPCGatewayAttachment'
-    Properties:
-      VpcId: !Ref VPC
-      InternetGatewayId: !Ref InternetGateway
-  ElasticIPAddress:
-    Type: 'AWS::EC2::EIP'
-    Properties:
-      Domain: VPC
-  NatGateway:
-    Type: 'AWS::EC2::NatGateway'
-    Properties:
-      AllocationId: !GetAtt ElasticIPAddress.AllocationId
-      SubnetId: !Ref PublicSubnetA
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-NAT'
-  PublicRouteTable:
-    Type: 'AWS::EC2::RouteTable'
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: Public
-  PublicRoute:
-    Type: 'AWS::EC2::Route'
-    Properties:
-      RouteTableId: !Ref PublicRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref InternetGateway
-  PrivateRouteTable:
-    Type: 'AWS::EC2::RouteTable'
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: Private
-  PrivateRoute:
-    Type: 'AWS::EC2::Route'
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NatGateway
-  PublicSubnetARouteTableAssociation:
-    Type: 'AWS::EC2::SubnetRouteTableAssociation'
-    Properties:
-      SubnetId: !Ref PublicSubnetA
-      RouteTableId: !Ref PublicRouteTable
-  PrivateSubnetARouteTableAssociation:
-    Type: 'AWS::EC2::SubnetRouteTableAssociation'
-    Properties:
-      SubnetId: !Ref PrivateSubnetA
-      RouteTableId: !Ref PrivateRouteTable
-  PublicSubnetBRouteTableAssociation:
-    Type: 'AWS::EC2::SubnetRouteTableAssociation'
-    Properties:
-      SubnetId: !Ref PublicSubnetB
-      RouteTableId: !Ref PublicRouteTable
-  PrivateSubnetBRouteTableAssociation:
-    Type: 'AWS::EC2::SubnetRouteTableAssociation'
-    Properties:
-      SubnetId: !Ref PrivateSubnetB
-      RouteTableId: !Ref PrivateRouteTable
-  SecurityGroup:
-    Type: 'AWS::EC2::SecurityGroup'
-    Properties:
-      GroupDescription: security group for SageMaker Model
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-model-security-group'
-  SecurityGroupIngress:
-    Type: 'AWS::EC2::SecurityGroupIngress'
-    Properties:
-      IpProtocol: '-1'
-      GroupId: !Ref SecurityGroup
-      SourceSecurityGroupId: !Ref SecurityGroup
-
-  LLMInternalALB:
-    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
-    Properties:
-      Name: LLM-API-Layer
-      Scheme: internal
-      SecurityGroups:
-        - !Ref SecurityGroup
-      Subnets:
-        # private subnet
-        - !Ref PrivateSubnetA
-        - !Ref PrivateSubnetB
-
-  #ECS based LLM invoke service
-  ECSCluster:
-    Type: AWS::ECS::Cluster
-    Properties:
-      ClusterName:
-        Ref: ECSClusterName
-      CapacityProviders:
-        - FARGATE
-        - FARGATE_SPOT
-      ClusterSettings:
-        - Name: containerInsights
-          Value: disabled
-      Configuration:
-        ExecuteCommandConfiguration:
-          Logging: DEFAULT
-      ServiceConnectDefaults:
-        Namespace: llm-eval-api-layer
-      Tags: [ ]
-
-  LLMTaskDefination:
-    Type: AWS::ECS::TaskDefinition
-    Properties:
-      Family: "ApiLayerDefinition"
-      # awsvpc is required for Fargate
-      NetworkMode: awsvpc
-      RequiresCompatibilities:
-        - FARGATE
-      Cpu: 1024
-      Memory: 8GB
-      ExecutionRoleArn: !Ref ExecutionRole
-      TaskRoleArn: !Ref TaskRole
-      ContainerDefinitions:
-        - Name: api-layer
-          Environment:
-            - Name: AWS_DEFAULT_REGION
-              Value: "us-west-2"
-            - Name: AWS_REGION
-              Value: "us-west-2"
-          Image:  !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/api-layer:latest"
-          Command:
-            - "--host"
-            - "0.0.0.0"
-            - "--port"
-            - "8001"
-            - "--table-name"
-            - "api-layer-ddb"
-          PortMappings:
-            - ContainerPort: 8001
-              HostPort: 8001
-          LogConfiguration:
-            LogDriver: awslogs
-            Options:
-              awslogs-region: !Ref AWS::Region
-              awslogs-group: !Ref LogGroup
-              awslogs-stream-prefix: ecs
-  LogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Join ['', [/ecs/, !Ref ProjectName,/, FastChatDefinition]]
-  # A role needed by ECS
-  ExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Join [ '', [ !Ref ProjectName, ExecutionRole ] ]
-      AssumeRolePolicyDocument:
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ecs-tasks.amazonaws.com
-            Action: 'sts:AssumeRole'
-      ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
 
   SageMakerRole:
     Type: AWS::IAM::Role
@@ -287,108 +66,6 @@ Resources:
                   - "dynamodb:GetItem"
                   - "bedrock:*"
                 Resource: "*"
-  ECSService:
-    Type: AWS::ECS::Service
-    Properties:
-      Cluster: !Ref ECSCluster
-      TaskDefinition: !Ref LLMTaskDefination
-      LaunchType: FARGATE
-      ServiceName: LLM-Invoke_API
-      SchedulingStrategy: REPLICA
-      DesiredCount: 2
-      LoadBalancers:
-      - ContainerName: api-layer
-        ContainerPort: 8001
-        LoadBalancerName:
-          Ref: AWS::NoValue
-        TargetGroupArn:
-          Ref: TargetGroup
-      NetworkConfiguration:
-        AwsvpcConfiguration:
-          AssignPublicIp: DISABLED
-          SecurityGroups:
-            - !Ref SecurityGroup
-          Subnets:
-            - !Ref PrivateSubnetA
-            - !Ref PrivateSubnetB
-      PlatformVersion: LATEST
-      DeploymentConfiguration:
-        MaximumPercent: 200
-        MinimumHealthyPercent: 100
-        DeploymentCircuitBreaker:
-          Enable: true
-          Rollback: true
-      DeploymentController:
-        Type: ECS
-      ServiceConnectConfiguration:
-        Enabled: false
-      Tags: []
-      EnableECSManagedTags: true
-    DependsOn:
-    - Listener
-
-  #IAM role for auto scaling
-  AutoScalingRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Join ['', [!Ref ECSClusterName, "AutoScalingRole"]]
-      AssumeRolePolicyDocument:
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ecs-tasks.amazonaws.com
-            Action: 'sts:AssumeRole'
-      ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceAutoscaleRole'
-
-  AutoScalingTarget:
-    Type: AWS::ApplicationAutoScaling::ScalableTarget
-    Properties:
-      MaxCapacity: '5'
-      MinCapacity: '2'
-      ResourceId: !Sub "service/${ECSClusterName}/LLM-Invoke_API"
-      RoleARN: !GetAtt AutoScalingRole.Arn
-      ScalableDimension: ecs:service:DesiredCount
-      ServiceNamespace: ecs
-    DependsOn:
-      - ECSService
-
-  AutoScalingPolicy:
-    Type: AWS::ApplicationAutoScaling::ScalingPolicy
-    Properties:
-      PolicyName: LLMInvoke
-      PolicyType: TargetTrackingScaling
-      ResourceId: !Sub "service/${ECSClusterName}/LLM-Invoke_API"
-      ScalingTargetId:
-        Ref: AutoScalingTarget
-      TargetTrackingScalingPolicyConfiguration:
-        DisableScaleIn: false
-        ScaleInCooldown: '100'
-        ScaleOutCooldown: '100'
-        TargetValue: '70'
-        PredefinedMetricSpecification:
-          PredefinedMetricType: ECSServiceAverageCPUUtilization
-
-  TargetGroup:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Properties:
-      HealthCheckPath: "/ping"
-      Name: LLMInvokeTG
-      Port: 80
-      Protocol: HTTP
-      TargetType: ip
-      HealthCheckProtocol: HTTP
-      VpcId: !Ref VPC
-  Listener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      DefaultActions:
-      - Type: forward
-        TargetGroupArn:
-          Ref: TargetGroup
-      LoadBalancerArn: !Ref LLMInternalALB
-      Port: '8001'
-      Protocol: HTTP
 
   EvaluationBucket:
     Type: 'AWS::S3::Bucket'
@@ -849,27 +526,20 @@ Resources:
     Properties:
       FunctionName: invoke_llm_lambda
       Handler: invoke_llm_handler.handler
-      Runtime: python3.11
+      Runtime: python3.9
       CodeUri: ../lambda
       MemorySize: 10240
-      VpcConfig:
-        SubnetIds:
-          - !Ref PrivateSubnetA
-          - !Ref PrivateSubnetB
-        SecurityGroupIds:
-          - !Ref SecurityGroup
       Timeout: 900
       EphemeralStorage:
         Size: 1024
       Environment:
         Variables:
           ResultBucket: !Sub '${EvaluationBucket}'
-          LLMEndpoint: !Sub "http://${LLMInternalALB.DNSName}:8001/invoke"
           LIB_BUCKET: !Sub 'eval-${AWS::AccountId}-${AWS::Region}'
           LIB_FILE: "lambda_extra_package.zip"
-          KB_ID: !Ref KnowledgeBaseWithAoss
+          # KB_ID: !Ref KnowledgeBaseWithAoss
       Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python311:17
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:25
       Policies:
         - AWSLambdaVPCAccessExecutionRole
         - Version: '2012-10-17'
@@ -910,27 +580,21 @@ Resources:
     Properties:
       FunctionName: evaluate_llm_lambda
       Handler: evaluate_llm_handler.handler
-      Runtime: python3.11
+      Runtime: python3.9
       CodeUri: ../lambda
       MemorySize: 10240
       EphemeralStorage:
         Size: 1024
-      VpcConfig:
-        SubnetIds:
-          - !Ref PrivateSubnetA
-          - !Ref PrivateSubnetB
-        SecurityGroupIds:
-          - !Ref SecurityGroup
+
       Environment:
         Variables:
           ResultBucket: !Sub '${EvaluationBucket}'
-          LLMEndpoint: !Sub "http://${LLMInternalALB.DNSName}:8001/invoke"
           LIB_BUCKET: !Sub 'eval-${AWS::AccountId}-${AWS::Region}'
           LIB_FILE: "lambda_extra_package.zip"
           ResultDatabase: !Ref ResultDatabase
       Timeout: 200
       Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python311:17
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:25
       Policies:
         - AWSLambdaVPCAccessExecutionRole
         - Version: '2012-10-17'
@@ -1132,22 +796,6 @@ Resources:
         WriteCapacityUnits: "5"
       TableName: "SolutionTableDDB"
 
-  APILayerDDB:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      AttributeDefinitions:
-        -
-          AttributeName: "model_id"
-          AttributeType: "S"
-      KeySchema:
-        -
-          AttributeName: "model_id"
-          KeyType: "HASH"
-      ProvisionedThroughput:
-        ReadCapacityUnits: "5"
-        WriteCapacityUnits: "5"
-      TableName: "api-layer-ddb"
-
   ResultDatabase:
     Type: AWS::Glue::Database
     Properties:
@@ -1156,83 +804,132 @@ Resources:
         Name: "llmeval_result"
 
 
+
+#REGAS related resource
+  REGASLambdaEvaluation:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: llm_eval_solution_regas_evaluation
+      Handler: evaluate_ragas_handler.lambda_handler
+      Runtime: python3.9
+      CodeUri: ../lambda
+      MemorySize: 10240
+      Timeout: 900
+      EphemeralStorage:
+        Size: 1024
+      Environment:
+        Variables:
+          LIB_BUCKET: !Sub 'eval-${AWS::AccountId}-${AWS::Region}'
+          LIB_FILE: "lambda_extra_package.zip"
+          RESULTBUCKET: !Sub '${EvaluationBucket}'
+          ResultDatabase: !Ref ResultDatabase
+          # KB_ID: !Ref KnowledgeBaseWithAoss
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - AmazonS3FullAccess
+        - AmazonBedrockFullAccess
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - glue:GetTable
+                - glue:GetDatabase
+                - glue:CreateTable
+                - glue:UpdateTable
+                - glue:BatchCreatePartition
+              Resource: "*"
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:25
+
+  REGASLambdaEvaluationPreprocess:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ragaseval_input_preprocess
+      Handler: ragaseval_input_preprocess.lambda_handler
+      Runtime: python3.9
+      CodeUri: ../lambda
+      MemorySize: 10240
+      Timeout: 900
+      EphemeralStorage:
+        Size: 1024
+      Environment:
+        Variables:
+          LIB_BUCKET: !Sub 'eval-${AWS::AccountId}-${AWS::Region}'
+          LIB_FILE: "lambda_extra_package.zip"
+          RESULTBUCKET: !Sub '${EvaluationBucket}'
+          ResultDatabase: !Ref ResultDatabase
+          # KB_ID: !Ref KnowledgeBaseWithAoss
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - AmazonS3FullAccess
+        - AmazonBedrockFullAccess
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - glue:GetTable
+                - glue:GetDatabase
+                - glue:CreateTable
+                - glue:UpdateTable
+                - glue:BatchCreatePartition
+              Resource: "*"
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:25
+
   DataAccessPolicy:
     Type: 'AWS::OpenSearchServerless::AccessPolicy'
     Properties:
-      Name: kbcollection-access-policy
+      Name: kb-access-policy
       Type: data
-      Description: Access policy for kbcollection collection
+      Description: Data Access policy for collection
       Policy: !Sub >-
         [{"Description":"Access for cfn user","Rules":[{"ResourceType":"index","Resource":["index/*/*"],"Permission":["aoss:*"]},
-        {"ResourceType":"collection","Resource":["collection/kbcollection"],"Permission":["aoss:*"]}],
-        "Principal":["arn:aws:iam::${AWS::AccountId}:role/evaluation-bedrock-kb-role"]}]
+        {"ResourceType":"collection","Resource":["collection/${CollectionName}"],"Permission":["aoss:*"]}],
+        "Principal":[
+        "arn:aws:iam::${AWS::AccountId}:role/kb-role-${AWS::AccountId}-${AWS::Region}",
+        "arn:aws:iam::${AWS::AccountId}:role/cr-role-${AWS::AccountId}-${AWS::Region}"
+        ]}]
     DependsOn: KnowledgeBaseRole
+
   NetworkPolicy:
     Type: 'AWS::OpenSearchServerless::SecurityPolicy'
     Properties:
-      Name: kbcollection-network-policy
+      Name: kb-network-policy
       Type: network
       Description: Network policy for kbcollection collection
-      Policy: >-
-        [{"Rules":[{"ResourceType":"collection","Resource":["collection/kbcollection"]}, {"ResourceType":"dashboard","Resource":["collection/kbcollection"]}],"AllowFromPublic":true}]
+      Policy: !Sub >-
+        [{"Rules":[{"ResourceType":"collection","Resource":["collection/${CollectionName}"]}, {"ResourceType":"dashboard","Resource":["collection/${CollectionName}"]}],"AllowFromPublic":true}]
+
+
   EncryptionPolicy:
     Type: 'AWS::OpenSearchServerless::SecurityPolicy'
     Properties:
-      Name: kbcollection-security-policy
+      Name: kb-encryption-policy
       Type: encryption
       Description: Encryption policy for kbcollection collection
-      Policy: >-
-        {"Rules":[{"ResourceType":"collection","Resource":["collection/kbcollection"]}],"AWSOwnedKey":true}
+      Policy: !Sub >-
+        {"Rules":[{"ResourceType":"collection","Resource":["collection/${CollectionName}"]}],"AWSOwnedKey":true}
+
+
 
   Collection:
     Type: 'AWS::OpenSearchServerless::Collection'
     Properties:
-      Name: kbcollection
+      Name: !Ref CollectionName
       Type: VECTORSEARCH
       Description: Collection to holds timeseries data
     DependsOn: EncryptionPolicy
-
-  ### bedrock knowledge base
-  KnowledgeBaseWithAoss:
-    Type: AWS::Bedrock::KnowledgeBase
+#
+  KnowledgeBaseBucket:
+    Type: 'AWS::S3::Bucket'
     Properties:
-      Name: "Evaluation-KnowledgeBase"
-      Description: "Evaluation KB"
-      RoleArn: !GetAtt KnowledgeBaseRole.Arn
-      KnowledgeBaseConfiguration:
-        Type: "VECTOR"
-        VectorKnowledgeBaseConfiguration:
-          EmbeddingModelArn: !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v2:0"
-      StorageConfiguration:
-        Type: "OPENSEARCH_SERVERLESS"
-        OpensearchServerlessConfiguration:
-          CollectionArn: !GetAtt Collection.Arn
-          VectorIndexName: "bedrock-knowledge-base-default-index"
-          FieldMapping:
-            VectorField: "bedrock-knowledge-base-default-vector"
-            TextField: "AMAZON_BEDROCK_TEXT_CHUNK"
-            MetadataField: "AMAZON_BEDROCK_METADATA"
-
-  KnowledgeBaseDataSource:
-    Type: AWS::Bedrock::DataSource
-    Properties:
-      KnowledgeBaseId: !Ref KnowledgeBaseWithAoss
-      Name: "Evaluation-KnowledgeBaseDataSource"
-      Description: "Evaluation-KnowledgeBase data soruce"
-      DataSourceConfiguration:
-        Type: "S3"
-        S3Configuration:
-          BucketArn:
-            !Join
-            - ''
-            - - 'arn:aws:s3:::'
-              - !Ref EvaluationBucket
-          InclusionPrefixes: [ "knowledgesource/" ]
+      BucketName:
+        Fn::Sub: 'bedrock-kb-${AWS::AccountId}-${AWS::Region}'
 
   KnowledgeBaseRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: evaluation-bedrock-kb-role
+      RoleName: !Sub "kb-role-${AWS::AccountId}-${AWS::Region}"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -1263,87 +960,91 @@ Resources:
               - 'opensearchserverless:ListCollections'
               - 'opensearchserverless:ListDocumentPaths'
               - 'opensearchserverless:UpdateCollection'
-            Resource: ["*"] #!GetAtt OpenSearchCollection.Arn
+            Resource: [ "*" ] #!GetAtt OpenSearchCollection.Arn
 
-#REGAS related resource
-  REGASLambdaEvaluation:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: llm_eval_solution_regas_evaluation
-      Handler: evaluate_ragas_handler.lambda_handler
-      Runtime: python3.11
-      CodeUri: ../lambda
-      MemorySize: 10240
-      Timeout: 900
-      EphemeralStorage:
-        Size: 1024
-      Environment:
-        Variables:
-          LIB_BUCKET: !Sub 'eval-${AWS::AccountId}-${AWS::Region}'
-          LIB_FILE: "lambda_extra_package.zip"
-          RESULTBUCKET: !Sub '${EvaluationBucket}'
-          ResultDatabase: !Ref ResultDatabase
-          KB_ID: !Ref KnowledgeBaseWithAoss
-      Policies:
-        - AWSLambdaBasicExecutionRole
-        - AmazonS3FullAccess
-        - AmazonBedrockFullAccess
-        - Version: '2012-10-17'
-          Statement:
-            - Effect: Allow
-              Action:
-                - glue:GetTable
-                - glue:GetDatabase
-                - glue:CreateTable
-                - glue:UpdateTable
-                - glue:BatchCreatePartition
-              Resource: "*"
-      Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python311:17
-
-  REGASLambdaEvaluationPreprocess:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: ragaseval_input_preprocess
-      Handler: ragaseval_input_preprocess.lambda_handler
-      Runtime: python3.11
-      CodeUri: ../lambda
-      MemorySize: 10240
-      Timeout: 900
-      EphemeralStorage:
-        Size: 1024
-      Environment:
-        Variables:
-          LIB_BUCKET: !Sub 'eval-${AWS::AccountId}-${AWS::Region}'
-          LIB_FILE: "lambda_extra_package.zip"
-          RESULTBUCKET: !Sub '${EvaluationBucket}'
-          ResultDatabase: !Ref ResultDatabase
-          KB_ID: !Ref KnowledgeBaseWithAoss
-      Policies:
-        - AWSLambdaBasicExecutionRole
-        - AmazonS3FullAccess
-        - AmazonBedrockFullAccess
-        - Version: '2012-10-17'
-          Statement:
-            - Effect: Allow
-              Action:
-                - glue:GetTable
-                - glue:GetDatabase
-                - glue:CreateTable
-                - glue:UpdateTable
-                - glue:BatchCreatePartition
-              Resource: "*"
-      Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python311:17
-
-
-Outputs:
 
   KnowledgeBaseWithAoss:
-    Value: !Ref KnowledgeBaseWithAoss
+    Type: AWS::Bedrock::KnowledgeBase
+    Properties:
+      Name: "KnowledgeBase"
+      Description: "KnowledgeBase"
+      RoleArn: !GetAtt KnowledgeBaseRole.Arn
+      KnowledgeBaseConfiguration:
+        Type: "VECTOR"
+        VectorKnowledgeBaseConfiguration:
+          EmbeddingModelArn: !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v1"
+      StorageConfiguration:
+        Type: "OPENSEARCH_SERVERLESS"
+        OpensearchServerlessConfiguration:
+          CollectionArn: !GetAtt Collection.Arn
+          VectorIndexName: !Ref IndexName
+          FieldMapping:
+            VectorField: "index"
+            TextField: "AMAZON_BEDROCK_TEXT_CHUNK"
+            MetadataField: "AMAZON_BEDROCK_METADATA"
+    DependsOn: VectorIndex
+
   KnowledgeBaseDataSource:
-    Value: !GetAtt KnowledgeBaseDataSource.DataSourceId
+    Type: AWS::Bedrock::DataSource
+    Properties:
+      KnowledgeBaseId: !Ref KnowledgeBaseWithAoss
+      Name: "KnowledgeBaseDataSource"
+      Description: "KnowledgeBase data soruce"
+      DataSourceConfiguration:
+        Type: "S3"
+        S3Configuration:
+          BucketArn:
+            !Join
+            - ''
+            - - 'arn:aws:s3:::'
+              - !Ref KnowledgeBaseBucket
+          InclusionPrefixes: [ "knowledgesource/" ]
 
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: !Sub "eval-${AWS::AccountId}-${AWS::Region}"
+        S3Key: custom_resource/lambda_function.zip
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.9
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60
+      Environment:
+        Variables:
+          OPENSEARCH_HOSTNAME: !GetAtt Collection.Id
+          OPENSEARCH_INDEX_NAME: !Ref IndexName
+          EMBEDDING_MODEL: amazon.titan-embed-text-v1
 
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "cr-role-${AWS::AccountId}-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AdministratorAccess
 
+  VectorIndex:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt LambdaFunction.Arn
+      CollectionArn: !GetAtt Collection.Arn
+      IndexName: !Ref IndexName
+      EmbeddingModel: amazon.titan-embed-text-v1
+
+#Outputs:
+#
+#  KnowledgeBaseWithAoss:
+#    Value: !Ref KnowledgeBaseWithAoss
+#  KnowledgeBaseDataSource:
+#    Value: !GetAtt KnowledgeBaseDataSource.DataSourceId
 

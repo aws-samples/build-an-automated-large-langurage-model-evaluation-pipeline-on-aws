@@ -24,57 +24,38 @@ else
   echo "Bucket $BUCKET already exists, using the bucket"
 fi
 
-cd custom_resource
+# cd custom_resource
 
 # Install the required packages into a directory named 'package'
-pip install -r requirements.txt -t package
+# pip install -r requirements.txt -t package
 
 # Navigate to the package directory
-cd package
+# cd package
 
 # Copy the lambda_handler.py into the package directory
-cp ../lambda_function.py .
+# cp ../lambda_function.py .
 
 # Zip the contents of the package directory into a file named lambda_function.zip
-zip -r ../lambda_function.zip .
+# zip -r ../lambda_function.zip .
 
 # Navigate back to the custom_resource directory
-cd ..
+# cd ..
 
 ## Clean up by removing the package directory
-rm -rf package
+# rm -rf package
 
-echo "Lambda function package created: custom_resource/lambda_function.zip"
+# echo "Lambda function package created: custom_resource/lambda_function.zip"
 
 # copy to s3 as package
-aws s3 cp lambda_function.zip s3://$BUCKET/custom_resource/lambda_function.zip
+# aws s3 cp lambda_function.zip s3://$BUCKET/custom_resource/lambda_function.zip
 
 # clean up the zip file
-rm lambda_function.zip
+# rm lambda_function.zip
 
-cd ..
+# cd ..
 
 # Export bucket name as environment variable
 export EVAL_PIPELINE_BUCKET=$BUCKET
-
-# create a ecr repository
-echo "check if api-layer repository exists..."
-aws ecr describe-repositories --repository-names api-layer --region $REGION 1>/dev/null 2>/dev/null
-if [ $? -ne 0 ]; then
-    echo "api-layer repository does not exist, creating..."
-    aws ecr create-repository --repository-name api-layer --region $REGION
-    echo "api-layer repository created"
-fi
-
-# build the api layer
-echo "login to ecr..."
-aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com
-echo "building api layer..."
-cd ../api-layer
-docker build -t api-layer .
-docker tag api-layer:latest $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/api-layer:latest
-docker push $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/api-layer:latest
-echo "api layer build completed"
 
 
 # back to the setup folder
@@ -93,7 +74,7 @@ fi
 
 # upload the zip file to s3
 echo "uploading lambda extra package to s3..."
-aws s3 cp $zip_file_name s3://$BUCKET/$zip_file_name --region $REGION
+#aws s3 cp $zip_file_name s3://$BUCKET/$zip_file_name --region $REGION
 
 # create a lambda package
 echo "creating lambda package..."
