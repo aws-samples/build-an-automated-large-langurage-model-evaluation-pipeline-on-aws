@@ -52,7 +52,7 @@ def generate_result(bedrock_client,
     )
 
     # Log token usage.
-
+    logger.info(response['output']['message'])
     text_result = response['output']['message']['content'][0]['text']
     logger.info("Generated text: %s", text_result)
     return text_result

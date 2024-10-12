@@ -58,6 +58,10 @@ def lambda_handler(event, context):
 
     evaluation_metric = [available_metrics[metric] for metric in metrics]
 
+    if len(evaluation_metric) == 0:
+        print("No valid evaluation metrics provided")
+        return
+
     path = f"s3://{bucket_name}/ragaseval_result/"
 
     # download the pickle file from s3
@@ -67,6 +71,7 @@ def lambda_handler(event, context):
         content = pickle.load(handle)
 
     dataset = convert_to_dataset(content)
+    print(dataset)
 
     evaluator = KnowledgeBasesEvaluations(evaluation_model_name)
     result_df = evaluator.evaluate(dataset, metrics=evaluation_metric)
@@ -89,6 +94,8 @@ def lambda_handler(event, context):
         partition_cols=['execution_id'],
         table="ragaseval_result"
     )
+
+    print(f"result saved to {path}")
 
 
 

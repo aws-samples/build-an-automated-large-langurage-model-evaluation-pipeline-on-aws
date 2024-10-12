@@ -48,7 +48,6 @@ def get_answer_from_api(model_name, context, question):
 
 
 def handler(event, context):
-    print(event)
     prompt = event['prompt']
     model_family = event['model_family']
     model_name = event['model_name']
@@ -66,6 +65,8 @@ def handler(event, context):
         # add some idle time to reduce the throttle possibility
         time.sleep(random.randint(0, 10))
         answer = get_answer_from_api(model_name, context, question)
+        data = {'id': [question_id], 'QUESTION': [question], 'CONTEXT': [[context]],
+                'ExpectedAnswer': [expected_answer], 'Response': [answer]}
     elif generation_method == "kb":
         # add some idle time to reduce the throttle possibility
         time.sleep(random.randint(0, 20))
@@ -75,16 +76,10 @@ def handler(event, context):
         answer_and_context = kb_generate_answer.get_answer_and_context(question)
         answer = answer_and_context['answer']
         context = answer_and_context['context']
-        context_list = [[c] for c in context]
+        data = {'id': [question_id], 'QUESTION': [question], 'CONTEXT': [context],
+                'ExpectedAnswer': [expected_answer], 'Response': [answer]}
     else:
         raise ValueError("Invalid generation method")
-
-    if generation_method == "native":
-        data = {'id': [question_id], 'QUESTION': [question], 'CONTEXT': [[context]],
-                'ExpectedAnswer': [expected_answer], 'Response': [answer]}
-    else:
-        data = {'id': [question_id], 'QUESTION': [question], 'CONTEXT': context_list,
-                'ExpectedAnswer': [expected_answer], 'Response': [answer]}
 
     file_name = f"{prompts_list[0]}_{model_family}-{model_name}.pickle"
     file = f"/tmp/{file_name}"

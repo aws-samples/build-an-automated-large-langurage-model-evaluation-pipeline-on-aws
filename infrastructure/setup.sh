@@ -24,35 +24,34 @@ else
   echo "Bucket $BUCKET already exists, using the bucket"
 fi
 
-# cd custom_resource
+ cd custom_resource
 
-# Install the required packages into a directory named 'package'
-# pip install -r requirements.txt -t package
+ # Install the required packages into a directory named 'package'
+ pip install -r requirements.txt -t package
 
-# Navigate to the package directory
-# cd package
+ # Navigate to the package directory
+ cd package
 
 # Copy the lambda_handler.py into the package directory
-# cp ../lambda_function.py .
+ cp ../lambda_function.py .
 
 # Zip the contents of the package directory into a file named lambda_function.zip
-# zip -r ../lambda_function.zip .
+ zip -r ../lambda_function.zip .
 
 # Navigate back to the custom_resource directory
-# cd ..
+cd ..
 
 ## Clean up by removing the package directory
-# rm -rf package
+rm -rf package
 
-# echo "Lambda function package created: custom_resource/lambda_function.zip"
+
+echo "Lambda function package created: custom_resource/lambda_function.zip"
 
 # copy to s3 as package
-# aws s3 cp lambda_function.zip s3://$BUCKET/custom_resource/lambda_function.zip
+aws s3 cp lambda_function.zip s3://$BUCKET/custom_resource/lambda_function.zip
 
-# clean up the zip file
-# rm lambda_function.zip
 
-# cd ..
+cd ..
 
 # Export bucket name as environment variable
 export EVAL_PIPELINE_BUCKET=$BUCKET
@@ -70,15 +69,17 @@ else
     cd packages
     zip -r ../$zip_file_name .
     cd ..
+    rm -rf packages
 fi
 
 # upload the zip file to s3
 echo "uploading lambda extra package to s3..."
-#aws s3 cp $zip_file_name s3://$BUCKET/$zip_file_name --region $REGION
+aws s3 cp $zip_file_name s3://$BUCKET/$zip_file_name --region $REGION
+
+rm -rf $zip_file_name
 
 # create a lambda package
 echo "creating lambda package..."
-
 
 
 # sam build
@@ -133,7 +134,7 @@ fi
 
 # put the sample document to knowledge base
 echo "putting sample document to knowledge base..."
-aws s3 cp ../evaluation_artifacts/Amazon_SageMaker_Developer_Guide.pdf s3://llm-evaluation-$ACCOUNT_ID-$REGION/knowledgesource/
+aws s3 cp ../evaluation_artifacts/Amazon_SageMaker_Developer_Guide.pdf s3://bedrock-kb-$ACCOUNT_ID-$REGION/knowledgesource/
 
 echo "sync the data via data source sync"
 # aws bedrock-agent start-ingestion-job --knowledge-base-id $KNOWLEDGE_BASE_WITH_AOSS --data-source-id $KNOWLEDGE_BASE_DATA_SOURCE --region $REGION

@@ -526,7 +526,7 @@ Resources:
     Properties:
       FunctionName: invoke_llm_lambda
       Handler: invoke_llm_handler.handler
-      Runtime: python3.9
+      Runtime: python3.10
       CodeUri: ../lambda
       MemorySize: 10240
       Timeout: 900
@@ -537,9 +537,9 @@ Resources:
           ResultBucket: !Sub '${EvaluationBucket}'
           LIB_BUCKET: !Sub 'eval-${AWS::AccountId}-${AWS::Region}'
           LIB_FILE: "lambda_extra_package.zip"
-          # KB_ID: !Ref KnowledgeBaseWithAoss
+          KB_ID: !Ref KnowledgeBaseWithAoss
       Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:25
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python310:20
       Policies:
         - AWSLambdaVPCAccessExecutionRole
         - Version: '2012-10-17'
@@ -556,12 +556,12 @@ Resources:
     Properties:
       FunctionName: invoke_llm_result_summary
       Handler: invoke_llm_result_summary.handler
-      Runtime: python3.9
+      Runtime: python3.10
       CodeUri: ../lambda
       MemorySize: 1024
       Timeout: 30
       Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:25
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python310:20
       Environment:
         Variables:
           ResultBucket: !Sub '${EvaluationBucket}'
@@ -580,7 +580,7 @@ Resources:
     Properties:
       FunctionName: evaluate_llm_lambda
       Handler: evaluate_llm_handler.handler
-      Runtime: python3.9
+      Runtime: python3.10
       CodeUri: ../lambda
       MemorySize: 10240
       EphemeralStorage:
@@ -594,7 +594,7 @@ Resources:
           ResultDatabase: !Ref ResultDatabase
       Timeout: 200
       Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:25
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python310:20
       Policies:
         - AWSLambdaVPCAccessExecutionRole
         - Version: '2012-10-17'
@@ -620,7 +620,7 @@ Resources:
     Properties:
       FunctionName: evaluate_metrics_lambda
       Handler: eval_metrics.lambda_handler
-      Runtime: python3.9
+      Runtime: python3.10
       CodeUri: ../lambda
       MemorySize: 1024
       Environment:
@@ -650,12 +650,12 @@ Resources:
     Properties:
       FunctionName: invoke_llm_convert_to_json
       Handler: invoke_llm_convert_to_json.handler
-      Runtime: python3.9
+      Runtime: python3.10
       CodeUri: ../lambda
       MemorySize: 1024
       Timeout: 5
       Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:25
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python310:20
       Policies:
         - AWSLambdaExecute
         - Version: '2012-10-17'
@@ -671,7 +671,7 @@ Resources:
     Properties:
       FunctionName: evaluate_llm_input_validation
       Handler: evaluate_llm_input_validation.handler
-      Runtime: python3.9
+      Runtime: python3.10
       CodeUri: ../lambda
       MemorySize: 1024
       Timeout: 5
@@ -692,7 +692,7 @@ Resources:
     Properties:
       FunctionName: fmeval_input_preprocessor
       Handler: fmeval_input_preprocessor.handler
-      Runtime: python3.9
+      Runtime: python3.10
       CodeUri: ../lambda
       MemorySize: 1024
       Timeout: 5
@@ -713,12 +713,12 @@ Resources:
     Properties:
       FunctionName: evaluate_llm_result_summary
       Handler: evaluate_llm_result_summary.handler
-      Runtime: python3.9
+      Runtime: python3.10
       CodeUri: ../lambda
       MemorySize: 1024
       Timeout: 30
       Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:25
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python310:20
       Environment:
         Variables:
           ResultBucket: !Sub '${EvaluationBucket}'
@@ -748,7 +748,7 @@ Resources:
     Properties:
       FunctionName: llm_eval_solution_start_sf
       Handler: start_sf.lambda_handler
-      Runtime: python3.9
+      Runtime: python3.10
       CodeUri: ../lambda
       MemorySize: 1024
       Timeout: 30
@@ -811,7 +811,7 @@ Resources:
     Properties:
       FunctionName: llm_eval_solution_regas_evaluation
       Handler: evaluate_ragas_handler.lambda_handler
-      Runtime: python3.9
+      Runtime: python3.10
       CodeUri: ../lambda
       MemorySize: 10240
       Timeout: 900
@@ -823,7 +823,7 @@ Resources:
           LIB_FILE: "lambda_extra_package.zip"
           RESULTBUCKET: !Sub '${EvaluationBucket}'
           ResultDatabase: !Ref ResultDatabase
-          # KB_ID: !Ref KnowledgeBaseWithAoss
+          KB_ID: !Ref KnowledgeBaseWithAoss
       Policies:
         - AWSLambdaBasicExecutionRole
         - AmazonS3FullAccess
@@ -839,14 +839,14 @@ Resources:
                 - glue:BatchCreatePartition
               Resource: "*"
       Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:25
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python310:20
 
   REGASLambdaEvaluationPreprocess:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: ragaseval_input_preprocess
       Handler: ragaseval_input_preprocess.lambda_handler
-      Runtime: python3.9
+      Runtime: python3.10
       CodeUri: ../lambda
       MemorySize: 10240
       Timeout: 900
@@ -858,7 +858,7 @@ Resources:
           LIB_FILE: "lambda_extra_package.zip"
           RESULTBUCKET: !Sub '${EvaluationBucket}'
           ResultDatabase: !Ref ResultDatabase
-          # KB_ID: !Ref KnowledgeBaseWithAoss
+          KB_ID: !Ref KnowledgeBaseWithAoss
       Policies:
         - AWSLambdaBasicExecutionRole
         - AmazonS3FullAccess
@@ -874,7 +874,7 @@ Resources:
                 - glue:BatchCreatePartition
               Resource: "*"
       Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:25
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python310:20
 
   DataAccessPolicy:
     Type: 'AWS::OpenSearchServerless::AccessPolicy'
@@ -1007,7 +1007,7 @@ Resources:
         S3Bucket: !Sub "eval-${AWS::AccountId}-${AWS::Region}"
         S3Key: custom_resource/lambda_function.zip
       Handler: lambda_function.lambda_handler
-      Runtime: python3.9
+      Runtime: python3.10
       Role: !GetAtt LambdaExecutionRole.Arn
       Timeout: 60
       Environment:

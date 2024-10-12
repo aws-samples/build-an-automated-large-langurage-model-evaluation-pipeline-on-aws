@@ -3,9 +3,9 @@ from handlers.utils.evaluation_util import EvaluationUtils
 import json
 import pickle
 
-s3_client = boto3.client('s3')
-evaluation_utils = EvaluationUtils("SolutionTableDDB")
+import __main__
 
+s3_client = boto3.client('s3')
 
 def read_jsonl_generator(file_path):
     with open(file_path, 'r') as jsonl_file:
@@ -62,7 +62,8 @@ def lambda_handler(event, context):
 
         with open(file, 'wb') as handle:
             pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
-            s3_client.upload_file(file, bucket, target_key)
+
+        s3_client.upload_file(file, bucket, target_key)
         pickle_list.append(f"s3://{bucket}/{target_key}")
 
 
@@ -101,3 +102,12 @@ def object_exists(s3_client, bucket, key):
     except s3_client.exceptions.ClientError as e:
         return False
 
+
+
+print("test")
+event = {
+    "evaluation_metrics": ["faithfulness", "answer_relevancy"],
+    "evaluation_model_name": "test_model",
+    "evaluation_location": "s3://llm-evaluation-713881807885-us-west-2/invoke_successful_result/jsonline/6ad08519-72bc-4d3d-ae73-96d128efa9a8/result.jsonl"
+}
+lambda_handler(event, None)

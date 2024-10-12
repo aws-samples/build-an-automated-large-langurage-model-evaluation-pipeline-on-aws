@@ -55,3 +55,30 @@ class EvaluationUtils:
 
         items = response['Items']
         return [item['SK'] for item in items]
+
+    def get_evaluation_template(self):
+        # PK is Evaluation, SK is Template
+        response = self.table.query(
+            KeyConditionExpression=Key('PK').eq('Evaluation') & Key('SK').eq('Template')
+        )
+
+        return response['Items'][0]['template']
+
+
+def main():
+    evaluation_utils = EvaluationUtils(table_name='SolutionTableDDB')
+    print(evaluation_utils.get_all_metrics())
+    template = evaluation_utils.get_evaluation_template()
+    context = "SageMaker includes the following machine learning environments: SageMaker Canvas: An auto ML service that gives people with no coding experience the ability to build models and make predictions with them. SageMaker Studio:   An integrated machine learning environment where you can build, train, deploy, and analyze your models all in the same application. SageMaker Studio Lab: A free service that gives customers access to AWS compute resources in an environment based on open-source JupyterLab. RStudio on Amazon SageMaker: An integrated development environment for R, with a console, syntax-highlighting editor that supports direct code execution, and tools for plotting, history, debugging and workspace management."
+    inquery = "Does SageMaker provide any free ML environments?"
+    response = "Yes, SageMaker does provide a free machine learning environment called SageMaker Studio Lab. This is a service that gives customers access to AWS compute resources in an environment based on open-source JupyterLab, at no charge. SageMaker Studio Lab allows users to get started with machine learning on AWS quickly without needing to configure infrastructure."
+    param_values = {
+        "CONTEXT": context,
+        "INQUIRY": inquery,
+        "RESPONSE": response
+    }
+    result = template.format(**param_values)
+    print(result)
+
+if  __name__ == "__main__":
+    main()
