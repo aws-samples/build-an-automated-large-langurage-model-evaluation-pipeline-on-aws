@@ -72,6 +72,7 @@ Resources:
     Properties:
       BucketName:
         Fn::Sub: 'llm-evaluation-${AWS::AccountId}-${AWS::Region}'
+
   LLMInvocationStatesExecutionRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -259,6 +260,8 @@ Resources:
               Service:
                 - !Sub states.${AWS::Region}.amazonaws.com
             Action: "sts:AssumeRole"
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AdministratorAccess'
       Path: "/"
       Policies:
         - PolicyName: LambdaExecutionPolicy
@@ -268,7 +271,8 @@ Resources:
               - Effect: Allow
                 Action:
                   - "lambda:InvokeFunction"
-                # TODO: narrow down
+                  - "states:*"
+                  - "iam:*"
                 Resource: "*"
         - PolicyName: StatesLogPolicy
           PolicyDocument:
@@ -287,6 +291,7 @@ Resources:
                   - logs:DescribeLogGroups
                   - logs:CreateLogGroup
                 Resource: "*"
+
   EvaluateLLMStateMachine:
     Type: AWS::StepFunctions::StateMachine
     Properties:
@@ -302,208 +307,44 @@ Resources:
                   "Type": "Parallel",
                   "Branches": [
                     {
-                      "StartAt": "RAGASEval_input_preprocess",
+                      "StartAt": "RAGAS Evaluation",
                       "States": {
-                        "RAGASEval_input_preprocess": {
+                        "RAGAS Evaluation": {
                           "Type": "Task",
-                          "Resource": "arn:aws:states:::lambda:invoke",
-                          "OutputPath": "$.Payload",
+                          "Resource": "arn:aws:states:::states:startExecution.sync:2",
                           "Parameters": {
-                            "Payload.$": "$",
-                            "FunctionName": "${RAGSEvalInputPreprocessorArn}"
+                            "StateMachineArn": "${RAGASEvalStepFunctionsArn}",
+                            "Input.$": "$"
                           },
-                          "Retry": [
-                            {
-                              "ErrorEquals": [
-                                "Lambda.ServiceException",
-                                "Lambda.AWSLambdaException",
-                                "Lambda.SdkClientException",
-                                "Lambda.TooManyRequestsException"
-                              ],
-                              "IntervalSeconds": 1,
-                              "MaxAttempts": 3,
-                              "BackoffRate": 2
-                            }
-                          ],
-                          "Next": "RAGASMap"
-                        },
-                        "RAGASMap": {
-                          "Type": "Map",
-                          "ItemProcessor": {
-                            "ProcessorConfig": {
-                              "Mode": "INLINE"
-                            },
-                            "StartAt": "RAGAS_Evaluation",
-                            "States": {
-                              "RAGAS_Evaluation": {
-                                "Type": "Task",
-                                "Resource": "arn:aws:states:::lambda:invoke",
-                                "OutputPath": "$.Payload",
-                                "Parameters": {
-                                  "Payload": {
-                                    "executionId.$": "$$.Execution.Id",
-                                    "input.$": "$"
-                                  },
-                                  "FunctionName": "${RAGSEvaluationArn}"
-                                },
-                                "Retry": [
-                                  {
-                                    "ErrorEquals": [
-                                      "States.ALL"
-                                    ],
-                                    "IntervalSeconds": 1,
-                                    "MaxAttempts": 3,
-                                    "BackoffRate": 2
-                                  }
-                                ],
-                                "End": true
-                              }
-                            }
-                          },
-                          "End": true,
-                          "MaxConcurrency": 2,
-                          "ItemsPath": "$.result"
+                          "End": true
                         }
                       }
                     },
                     {
-                      "StartAt": "LLMEval_input_preprocess",
+                      "StartAt": "LLEval Evaluation",
                       "States": {
-                        "LLMEval_input_preprocess": {
+                        "LLEval Evaluation": {
                           "Type": "Task",
-                          "Resource": "arn:aws:states:::lambda:invoke",
-                          "OutputPath": "$.Payload",
+                          "Resource": "arn:aws:states:::states:startExecution.sync:2",
                           "Parameters": {
-                            "Payload.$": "$",
-                            "FunctionName": "${LLMEvalInputProcessorLambdaArn}"
+                            "StateMachineArn": "${LLMEvalStepFunctionsArn}",
+                            "Input.$": "$"
                           },
-                          "Retry": [
-                            {
-                              "ErrorEquals": [
-                                "States.ALL"
-                              ],
-                              "IntervalSeconds": 1,
-                              "MaxAttempts": 3,
-                              "BackoffRate": 2
-                            }
-                          ],
-                          "Next": "LLMEvalMap"
-                        },
-                        "LLMEvalMap": {
-                          "Type": "Map",
-                          "ItemProcessor": {
-                            "ProcessorConfig": {
-                              "Mode": "INLINE"
-                            },
-                            "StartAt": "LLMEvaluate",
-                            "States": {
-                              "LLMEvaluate": {
-                                "Type": "Task",
-                                "Resource": "arn:aws:states:::lambda:invoke",
-                                "Parameters": {
-                                  "FunctionName": "${LLMEvalLambdaArn}",
-                                  "Payload": {
-                                    "execution_id.$": "$$.Execution.Id",
-                                    "input.$": "$"
-                                  }
-                                },
-                                "Retry": [
-                                  {
-                                    "ErrorEquals": [
-                                      "States.ALL"
-                                    ],
-                                    "IntervalSeconds": 1,
-                                    "MaxAttempts": 3,
-                                    "BackoffRate": 2
-                                  }
-                                ],
-                                "Catch": [
-                                  {
-                                    "ErrorEquals": [
-                                      "States.ALL"
-                                    ],
-                                    "Next": "NoResult"
-                                  }
-                                ],
-                                "End": true,
-                                "ResultSelector": {
-                                  "result.$": "$.Payload"
-                                },
-                                "ResultPath": "$.result"
-                              },
-                              "NoResult": {
-                                "Type": "Succeed"
-                              }
-                            }
-                          },
-                          "ItemsPath": "$.result",
-                          "End": true,
-                          "MaxConcurrency": 1
+                          "End": true
                         }
                       }
                     },
                     {
-                      "StartAt": "FMEval_input_preprocessor",
+                      "StartAt": "FMEval Evaluation",
                       "States": {
-                        "FMEval_input_preprocessor": {
+                        "FMEval Evaluation": {
                           "Type": "Task",
-                          "Resource": "arn:aws:states:::lambda:invoke",
-                          "OutputPath": "$.Payload",
+                          "Resource": "arn:aws:states:::states:startExecution.sync:2",
                           "Parameters": {
-                            "Payload.$": "$",
-                            "FunctionName": "${FMEvalValidationInputArn}"
+                            "StateMachineArn": "${FMEvalStepFunctionsArn}",
+                            "Input.$": "$"
                           },
-                          "Retry": [
-                            {
-                              "ErrorEquals": [
-                                "Lambda.ServiceException",
-                                "Lambda.AWSLambdaException",
-                                "Lambda.SdkClientException",
-                                "Lambda.TooManyRequestsException"
-                              ],
-                              "IntervalSeconds": 1,
-                              "MaxAttempts": 3,
-                              "BackoffRate": 2
-                            }
-                          ],
-                          "Next": "FMEvalMap"
-                        },
-                        "FMEvalMap": {
-                          "Type": "Map",
-                          "ItemProcessor": {
-                            "ProcessorConfig": {
-                              "Mode": "INLINE"
-                            },
-                            "StartAt": "FMEvaluate",
-                            "States": {
-                              "FMEvaluate": {
-                                "Type": "Task",
-                                "Resource": "arn:aws:states:::lambda:invoke",
-                                "Parameters": {
-                                  "FunctionName": "${EvaluateMetricArn}",
-                                  "Payload.$": "$"
-                                },
-                                "Retry": [
-                                  {
-                                    "ErrorEquals": [
-                                      "States.ALL"
-                                    ],
-                                    "IntervalSeconds": 1,
-                                    "MaxAttempts": 3,
-                                    "BackoffRate": 2
-                                  }
-                                ],
-                                "End": true,
-                                "ResultSelector": {
-                                  "result.$": "$.Payload"
-                                },
-                                "ResultPath": "$.result"
-                              }
-                            }
-                          },
-                          "ItemsPath": "$.result",
-                          "End": true,
-                          "MaxConcurrency": 5
+                          "End": true
                         }
                       }
                     }
@@ -513,12 +354,9 @@ Resources:
               }
             }
           - {
-            LLMEvalInputProcessorLambdaArn: !GetAtt ValidateLLMEvaluateInput.Arn,
-            LLMEvalLambdaArn: !GetAtt EvaluateLLM.Arn,
-            FMEvalValidationInputArn: !GetAtt FMEvalValidationInput.Arn,
-            EvaluateMetricArn: !GetAtt EvaluateMetric.Arn,
-            RAGSEvaluationArn: !GetAtt REGASLambdaEvaluation.Arn,
-            RAGSEvalInputPreprocessorArn: !GetAtt REGASLambdaEvaluationPreprocess.Arn
+            LLMEvalStepFunctionsArn: !GetAtt LLMEvalStateMachine.Arn,
+            FMEvalStepFunctionsArn: !GetAtt FMEvalStateMachine.Arn,
+            RAGASEvalStepFunctionsArn: !GetAtt EvaluateLLMStateMachineRAGAS.Arn
           }
       RoleArn: !GetAtt LLMIEvaluationStatesExecutionRole.Arn
   InvokeLLM:
@@ -918,6 +756,7 @@ Resources:
         [{"Rules":[{"ResourceType":"collection","Resource":["collection/${CollectionName}"]}, {"ResourceType":"dashboard","Resource":["collection/${CollectionName}"]}],"AllowFromPublic":true}]
 
 
+
   EncryptionPolicy:
     Type: 'AWS::OpenSearchServerless::SecurityPolicy'
     Properties:
@@ -926,6 +765,7 @@ Resources:
       Description: Encryption policy for kbcollection collection
       Policy: !Sub >-
         {"Rules":[{"ResourceType":"collection","Resource":["collection/${CollectionName}"]}],"AWSOwnedKey":true}
+
 
 
 
@@ -1057,6 +897,253 @@ Resources:
       CollectionArn: !GetAtt Collection.Arn
       IndexName: !Ref IndexName
       EmbeddingModel: amazon.titan-embed-text-v1
+
+
+  EvaluateLLMStateMachineRAGAS:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: Evaluate-RAGASEval
+      DefinitionString:
+        Fn::Sub:
+          - |-
+            {
+              "StartAt": "RAGASEval_input_preprocess",
+              "States": {
+                "RAGASEval_input_preprocess": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "OutputPath": "$.Payload",
+                  "Parameters": {
+                    "Payload.$": "$",
+                    "FunctionName": "${RAGSEvalInputPreprocessorArn}"
+                  },
+                  "Retry": [
+                    {
+                      "ErrorEquals": [
+                        "Lambda.ServiceException",
+                        "Lambda.AWSLambdaException",
+                        "Lambda.SdkClientException",
+                        "Lambda.TooManyRequestsException"
+                      ],
+                      "IntervalSeconds": 1,
+                      "MaxAttempts": 3,
+                      "BackoffRate": 2
+                    }
+                  ],
+                  "Next": "RAGASMap"
+                },
+                "RAGASMap": {
+                  "Type": "Map",
+                  "ItemProcessor": {
+                    "ProcessorConfig": {
+                      "Mode": "INLINE"
+                    },
+                    "StartAt": "RAGAS_Evaluation",
+                    "States": {
+                      "RAGAS_Evaluation": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::lambda:invoke",
+                        "OutputPath": "$.Payload",
+                        "Parameters": {
+                          "Payload": {
+                            "executionId.$": "$$.Execution.Id",
+                            "input.$": "$"
+                          },
+                          "FunctionName": "${RAGSEvaluationArn}"
+                        },
+                        "Retry": [
+                          {
+                            "ErrorEquals": [
+                              "States.ALL"
+                            ],
+                            "IntervalSeconds": 1,
+                            "MaxAttempts": 3,
+                            "BackoffRate": 2
+                          }
+                        ],
+                        "End": true
+                      }
+                    }
+                  },
+                  "End": true,
+                  "MaxConcurrency": 2,
+                  "ItemsPath": "$.result"
+                }
+              }
+            }
+          - {
+            RAGSEvaluationArn: !GetAtt REGASLambdaEvaluation.Arn,
+            RAGSEvalInputPreprocessorArn: !GetAtt REGASLambdaEvaluationPreprocess.Arn
+          }
+      RoleArn: !GetAtt LLMIEvaluationStatesExecutionRole.Arn
+
+  LLMEvalStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: Evaluate-LLMEval
+      DefinitionString:
+        Fn::Sub:
+          - |-
+            {
+              "StartAt": "LLMEval_input_preprocess",
+              "States": {
+                "LLMEval_input_preprocess": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "OutputPath": "$.Payload",
+                  "Parameters": {
+                    "Payload.$": "$",
+                    "FunctionName": "${LLMEvalInputProcessorLambdaArn}"
+                  },
+                  "Retry": [
+                    {
+                      "ErrorEquals": [
+                        "States.ALL"
+                      ],
+                      "IntervalSeconds": 1,
+                      "MaxAttempts": 3,
+                      "BackoffRate": 2
+                    }
+                  ],
+                  "Next": "LLMEvalMap"
+                },
+                "LLMEvalMap": {
+                  "Type": "Map",
+                  "ItemProcessor": {
+                    "ProcessorConfig": {
+                      "Mode": "INLINE"
+                    },
+                    "StartAt": "LLMEvaluate",
+                    "States": {
+                      "LLMEvaluate": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::lambda:invoke",
+                        "Parameters": {
+                          "FunctionName": "${LLMEvalLambdaArn}",
+                          "Payload": {
+                            "execution_id.$": "$$.Execution.Id",
+                            "input.$": "$"
+                          }
+                        },
+                        "Retry": [
+                          {
+                            "ErrorEquals": [
+                              "States.ALL"
+                            ],
+                            "IntervalSeconds": 1,
+                            "MaxAttempts": 3,
+                            "BackoffRate": 2
+                          }
+                        ],
+                        "Catch": [
+                          {
+                            "ErrorEquals": [
+                              "States.ALL"
+                            ],
+                            "Next": "NoResult"
+                          }
+                        ],
+                        "End": true,
+                        "ResultSelector": {
+                          "result.$": "$.Payload"
+                        },
+                        "ResultPath": "$.result"
+                      },
+                      "NoResult": {
+                        "Type": "Succeed"
+                      }
+                    }
+                  },
+                  "ItemsPath": "$.result",
+                  "End": true,
+                  "MaxConcurrency": 1
+                }
+              }
+            }
+          - {
+            LLMEvalInputProcessorLambdaArn: !GetAtt ValidateLLMEvaluateInput.Arn,
+            LLMEvalLambdaArn: !GetAtt EvaluateLLM.Arn
+          }
+      RoleArn: !GetAtt LLMIEvaluationStatesExecutionRole.Arn
+
+  FMEvalStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: Evaluate-FMEval
+      DefinitionString:
+        Fn::Sub:
+          - |-
+            {
+              "StartAt": "FMEval_input_preprocessor",
+              "States": {
+                "FMEval_input_preprocessor": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "OutputPath": "$.Payload",
+                  "Parameters": {
+                    "Payload.$": "$",
+                    "FunctionName": "${FMEvalValidationInputArn}"
+                  },
+                  "Retry": [
+                    {
+                      "ErrorEquals": [
+                        "Lambda.ServiceException",
+                        "Lambda.AWSLambdaException",
+                        "Lambda.SdkClientException",
+                        "Lambda.TooManyRequestsException"
+                      ],
+                      "IntervalSeconds": 1,
+                      "MaxAttempts": 3,
+                      "BackoffRate": 2
+                    }
+                  ],
+                  "Next": "FMEvalMap"
+                },
+                "FMEvalMap": {
+                  "Type": "Map",
+                  "ItemProcessor": {
+                    "ProcessorConfig": {
+                      "Mode": "INLINE"
+                    },
+                    "StartAt": "FMEvaluate",
+                    "States": {
+                      "FMEvaluate": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::lambda:invoke",
+                        "Parameters": {
+                          "FunctionName": "${EvaluateMetricArn}",
+                          "Payload.$": "$"
+                        },
+                        "Retry": [
+                          {
+                            "ErrorEquals": [
+                              "States.ALL"
+                            ],
+                            "IntervalSeconds": 1,
+                            "MaxAttempts": 3,
+                            "BackoffRate": 2
+                          }
+                        ],
+                        "End": true,
+                        "ResultSelector": {
+                          "result.$": "$.Payload"
+                        },
+                        "ResultPath": "$.result"
+                      }
+                    }
+                  },
+                  "ItemsPath": "$.result",
+                  "End": true,
+                  "MaxConcurrency": 5
+                }
+              }
+            }
+          - {
+            FMEvalValidationInputArn: !GetAtt FMEvalValidationInput.Arn,
+            EvaluateMetricArn: !GetAtt EvaluateMetric.Arn,
+          }
+      RoleArn: !GetAtt LLMIEvaluationStatesExecutionRole.Arn
+
 
 #Outputs:
 #
