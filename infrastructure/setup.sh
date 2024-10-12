@@ -56,6 +56,28 @@ cd ..
 # Export bucket name as environment variable
 export EVAL_PIPELINE_BUCKET=$BUCKET
 
+# create a ecr repository
+echo "check if api-layer repository exists..."
+aws ecr describe-repositories --repository-names api-layer --region $REGION 1>/dev/null 2>/dev/null
+if [ $? -ne 0 ]; then
+    echo "api-layer repository does not exist, creating..."
+    aws ecr create-repository --repository-name api-layer --region $REGION
+    echo "api-layer repository created"
+fi
+
+# build the api layer
+echo "login to ecr..."
+aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com
+echo "building api layer..."
+cd ../api-layer
+docker build -t api-layer .
+docker tag api-layer:latest $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/api-layer:latest
+docker push $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/api-layer:latest
+echo "api layer build completed"
+
+
+# back to the setup folder
+cd ../infrastructure
 
 # back to the setup folder
 cd ../infrastructure
@@ -138,3 +160,4 @@ aws s3 cp ../evaluation_artifacts/Amazon_SageMaker_Developer_Guide.pdf s3://bedr
 
 echo "sync the data via data source sync"
 # aws bedrock-agent start-ingestion-job --knowledge-base-id $KNOWLEDGE_BASE_WITH_AOSS --data-source-id $KNOWLEDGE_BASE_DATA_SOURCE --region $REGION
+
