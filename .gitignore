@@ -1,3 +1,7 @@
 .idea
 **.aws-sam/
 **packaged.yaml
+.venv
+tests
+infrastructure/packages/*
+infrastructure/lambda_extra_package.zip

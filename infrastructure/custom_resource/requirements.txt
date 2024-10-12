@@ -1,0 +1,2 @@
+requests_aws4auth
+cfnresponse

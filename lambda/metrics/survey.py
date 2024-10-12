@@ -4,11 +4,13 @@ from prompts.template import PromptTemplate
 from prompts.store import TemplateStore
 from importlib import import_module
 from log.logger import app_logger
-
-from llm_api.invoke_llm import get_llm_result
+import boto3
+from llm_api.invoke_llm import generate_result
 
 template_id = "survey template"
 logger = app_logger()
+
+bedrock_client = boto3.client(service_name='bedrock-runtime')
 
 class SurveyMetric(BaseMetric):
     def __init__(self, 
@@ -57,7 +59,7 @@ class SurveyMetric(BaseMetric):
                 param_values=param_values
             )
             logger.info(str(prompt))
-            answer = get_llm_result(str(prompt), self.model_family, self.model_name)
+            answer = generate_result(bedrock_client, self.model_name, prompt,   question["Question"])
             if answer.strip(" ").lower() == "yes":
                     score += question["Weight"]
         return score / self.total_weight

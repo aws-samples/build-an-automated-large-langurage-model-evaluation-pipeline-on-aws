@@ -12,25 +12,6 @@ Parameters:
     MinLength: '1'
     Type: String
     Default: LLM-Eval
-  ECSClusterName:
-    Type: String
-    Description: Specifies the ECS Cluster Name with which the resources would be associated
-    Default: llm-eval-api-cluster
-  VpcCIDR:
-    Type: String
-    Default: 10.2.0.0/16
-  PublicSubnetCIDRA:
-    Type: String
-    Default: 10.2.0.0/24
-  PrivateSubnetCIDRA:
-    Type: String
-    Default: 10.2.1.0/24
-  PublicSubnetCIDRB:
-    Type: String
-    Default: 10.2.2.0/24
-  PrivateSubnetCIDRB:
-    Type: String
-    Default: 10.2.3.0/24
   TrainingURL:
     Type: String
     Description: the training image
@@ -38,218 +19,16 @@ Parameters:
     Type: String
     Default: fmeval
 
+  CollectionName:
+    Type: String
+    Default: knowledgebasecollection
+
+  IndexName:
+    Type: String
+    Default: kbindex
+
 
 Resources:
-  # VPC relates resources
-  VPC:
-    Type: 'AWS::EC2::VPC'
-    Properties:
-      CidrBlock: !Ref VpcCIDR
-      EnableDnsSupport: true
-      EnableDnsHostnames: true
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-vpc'
-  PublicSubnetA:
-    Type: 'AWS::EC2::Subnet'
-    Properties:
-      CidrBlock: !Ref PublicSubnetCIDRA
-      VpcId: !Ref VPC
-      AvailabilityZone: !Sub '${AWS::Region}a'
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-public-subnet-a'
-  PublicSubnetB:
-    Type: 'AWS::EC2::Subnet'
-    Properties:
-      CidrBlock: !Ref PublicSubnetCIDRB
-      VpcId: !Ref VPC
-      AvailabilityZone: !Sub '${AWS::Region}b'
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-public-subnet-b'
-  PrivateSubnetA:
-    Type: 'AWS::EC2::Subnet'
-    Properties:
-      CidrBlock: !Ref PrivateSubnetCIDRA
-      VpcId: !Ref VPC
-      AvailabilityZone: !Sub '${AWS::Region}a'
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-private-subnet-a'
-  PrivateSubnetB:
-    Type: 'AWS::EC2::Subnet'
-    Properties:
-      CidrBlock: !Ref PrivateSubnetCIDRB
-      VpcId: !Ref VPC
-      AvailabilityZone: !Sub '${AWS::Region}b'
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-private-subnet-b'
-  InternetGateway:
-    Type: 'AWS::EC2::InternetGateway'
-  AttachGateway:
-    Type: 'AWS::EC2::VPCGatewayAttachment'
-    Properties:
-      VpcId: !Ref VPC
-      InternetGatewayId: !Ref InternetGateway
-  ElasticIPAddress:
-    Type: 'AWS::EC2::EIP'
-    Properties:
-      Domain: VPC
-  NatGateway:
-    Type: 'AWS::EC2::NatGateway'
-    Properties:
-      AllocationId: !GetAtt ElasticIPAddress.AllocationId
-      SubnetId: !Ref PublicSubnetA
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-NAT'
-  PublicRouteTable:
-    Type: 'AWS::EC2::RouteTable'
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: Public
-  PublicRoute:
-    Type: 'AWS::EC2::Route'
-    Properties:
-      RouteTableId: !Ref PublicRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref InternetGateway
-  PrivateRouteTable:
-    Type: 'AWS::EC2::RouteTable'
-    Properties:
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: Private
-  PrivateRoute:
-    Type: 'AWS::EC2::Route'
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NatGateway
-  PublicSubnetARouteTableAssociation:
-    Type: 'AWS::EC2::SubnetRouteTableAssociation'
-    Properties:
-      SubnetId: !Ref PublicSubnetA
-      RouteTableId: !Ref PublicRouteTable
-  PrivateSubnetARouteTableAssociation:
-    Type: 'AWS::EC2::SubnetRouteTableAssociation'
-    Properties:
-      SubnetId: !Ref PrivateSubnetA
-      RouteTableId: !Ref PrivateRouteTable
-  PublicSubnetBRouteTableAssociation:
-    Type: 'AWS::EC2::SubnetRouteTableAssociation'
-    Properties:
-      SubnetId: !Ref PublicSubnetB
-      RouteTableId: !Ref PublicRouteTable
-  PrivateSubnetBRouteTableAssociation:
-    Type: 'AWS::EC2::SubnetRouteTableAssociation'
-    Properties:
-      SubnetId: !Ref PrivateSubnetB
-      RouteTableId: !Ref PrivateRouteTable
-  SecurityGroup:
-    Type: 'AWS::EC2::SecurityGroup'
-    Properties:
-      GroupDescription: security group for SageMaker Model
-      VpcId: !Ref VPC
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectName}-model-security-group'
-  SecurityGroupIngress:
-    Type: 'AWS::EC2::SecurityGroupIngress'
-    Properties:
-      IpProtocol: '-1'
-      GroupId: !Ref SecurityGroup
-      SourceSecurityGroupId: !Ref SecurityGroup
-
-  LLMInternalALB:
-    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
-    Properties:
-      Name: LLM-API-Layer
-      Scheme: internal
-      SecurityGroups:
-        - !Ref SecurityGroup
-      Subnets:
-        # private subnet
-        - !Ref PrivateSubnetA
-        - !Ref PrivateSubnetB
-
-  #ECS based LLM invoke service
-  ECSCluster:
-    Type: AWS::ECS::Cluster
-    Properties:
-      ClusterName:
-        Ref: ECSClusterName
-      CapacityProviders:
-        - FARGATE
-        - FARGATE_SPOT
-      ClusterSettings:
-        - Name: containerInsights
-          Value: disabled
-      Configuration:
-        ExecuteCommandConfiguration:
-          Logging: DEFAULT
-      ServiceConnectDefaults:
-        Namespace: llm-eval-api-layer
-      Tags: [ ]
-
-  LLMTaskDefination:
-    Type: AWS::ECS::TaskDefinition
-    Properties:
-      Family: "ApiLayerDefinition"
-      # awsvpc is required for Fargate
-      NetworkMode: awsvpc
-      RequiresCompatibilities:
-        - FARGATE
-      Cpu: 1024
-      Memory: 8GB
-      ExecutionRoleArn: !Ref ExecutionRole
-      TaskRoleArn: !Ref TaskRole
-      ContainerDefinitions:
-        - Name: api-layer
-          Environment:
-            - Name: AWS_DEFAULT_REGION
-              Value: "us-west-2"
-            - Name: AWS_REGION
-              Value: "us-west-2"
-          Image:  !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/api-layer:latest"
-          Command:
-            - "--host"
-            - "0.0.0.0"
-            - "--port"
-            - "8001"
-            - "--table-name"
-            - "api-layer-ddb"
-          PortMappings:
-            - ContainerPort: 8001
-              HostPort: 8001
-          LogConfiguration:
-            LogDriver: awslogs
-            Options:
-              awslogs-region: !Ref AWS::Region
-              awslogs-group: !Ref LogGroup
-              awslogs-stream-prefix: ecs
-  LogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Join ['', [/ecs/, !Ref ProjectName,/, FastChatDefinition]]
-  # A role needed by ECS
-  ExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Join [ '', [ !Ref ProjectName, ExecutionRole ] ]
-      AssumeRolePolicyDocument:
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ecs-tasks.amazonaws.com
-            Action: 'sts:AssumeRole'
-      ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
 
   SageMakerRole:
     Type: AWS::IAM::Role
@@ -287,108 +66,6 @@ Resources:
                   - "dynamodb:GetItem"
                   - "bedrock:*"
                 Resource: "*"
-  ECSService:
-    Type: AWS::ECS::Service
-    Properties:
-      Cluster: !Ref ECSCluster
-      TaskDefinition: !Ref LLMTaskDefination
-      LaunchType: FARGATE
-      ServiceName: LLM-Invoke_API
-      SchedulingStrategy: REPLICA
-      DesiredCount: 2
-      LoadBalancers:
-      - ContainerName: api-layer
-        ContainerPort: 8001
-        LoadBalancerName:
-          Ref: AWS::NoValue
-        TargetGroupArn:
-          Ref: TargetGroup
-      NetworkConfiguration:
-        AwsvpcConfiguration:
-          AssignPublicIp: DISABLED
-          SecurityGroups:
-            - !Ref SecurityGroup
-          Subnets:
-            - !Ref PrivateSubnetA
-            - !Ref PrivateSubnetB
-      PlatformVersion: LATEST
-      DeploymentConfiguration:
-        MaximumPercent: 200
-        MinimumHealthyPercent: 100
-        DeploymentCircuitBreaker:
-          Enable: true
-          Rollback: true
-      DeploymentController:
-        Type: ECS
-      ServiceConnectConfiguration:
-        Enabled: false
-      Tags: []
-      EnableECSManagedTags: true
-    DependsOn:
-    - Listener
-
-  #IAM role for auto scaling
-  AutoScalingRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Join ['', [!Ref ECSClusterName, "AutoScalingRole"]]
-      AssumeRolePolicyDocument:
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ecs-tasks.amazonaws.com
-            Action: 'sts:AssumeRole'
-      ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceAutoscaleRole'
-
-  AutoScalingTarget:
-    Type: AWS::ApplicationAutoScaling::ScalableTarget
-    Properties:
-      MaxCapacity: '5'
-      MinCapacity: '2'
-      ResourceId: !Sub "service/${ECSClusterName}/LLM-Invoke_API"
-      RoleARN: !GetAtt AutoScalingRole.Arn
-      ScalableDimension: ecs:service:DesiredCount
-      ServiceNamespace: ecs
-    DependsOn:
-      - ECSService
-
-  AutoScalingPolicy:
-    Type: AWS::ApplicationAutoScaling::ScalingPolicy
-    Properties:
-      PolicyName: LLMInvoke
-      PolicyType: TargetTrackingScaling
-      ResourceId: !Sub "service/${ECSClusterName}/LLM-Invoke_API"
-      ScalingTargetId:
-        Ref: AutoScalingTarget
-      TargetTrackingScalingPolicyConfiguration:
-        DisableScaleIn: false
-        ScaleInCooldown: '100'
-        ScaleOutCooldown: '100'
-        TargetValue: '70'
-        PredefinedMetricSpecification:
-          PredefinedMetricType: ECSServiceAverageCPUUtilization
-
-  TargetGroup:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Properties:
-      HealthCheckPath: "/ping"
-      Name: LLMInvokeTG
-      Port: 80
-      Protocol: HTTP
-      TargetType: ip
-      HealthCheckProtocol: HTTP
-      VpcId: !Ref VPC
-  Listener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      DefaultActions:
-      - Type: forward
-        TargetGroupArn:
-          Ref: TargetGroup
-      LoadBalancerArn: !Ref LLMInternalALB
-      Port: '8001'
-      Protocol: HTTP
 
   EvaluationBucket:
     Type: 'AWS::S3::Bucket'
@@ -536,7 +213,7 @@ Resources:
                     }
                   },
                   "ItemsPath": "$.result",
-                  "MaxConcurrency": 10,
+                  "MaxConcurrency": 3,
                   "Next": "InvokeSummary"
                 },
                 "InvokeSummary": {
@@ -570,6 +247,7 @@ Resources:
             InvokeSummaryLambdaArn: !GetAtt InvokeResultSummary.Arn
           }
       RoleArn: !GetAtt LLMInvocationStatesExecutionRole.Arn
+
   LLMIEvaluationStatesExecutionRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -617,187 +295,230 @@ Resources:
         Fn::Sub:
           - |-
             {
-               "Comment":"Evaluate state machine",
-               "StartAt":"Evaluate",
-               "States":{
-                  "Evaluate":{
-                     "Type":"Parallel",
-                     "Branches":[
-                        {
-                           "StartAt":"LLMEval_input_process",
-                           "States":{
-                              "LLMEval_input_process":{
-                                 "Type":"Task",
-                                 "Resource":"arn:aws:states:::lambda:invoke",
-                                 "OutputPath":"$.Payload",
-                                 "Parameters":{
-                                    "Payload.$":"$",
-                                    "FunctionName":"${LLMEvalInputProcessorLambdaArn}"
-                                 },
-                                 "Retry":[
-                                    {
-                                       "ErrorEquals":[
-                                          "States.ALL"
-                                       ],
-                                       "IntervalSeconds":1,
-                                       "MaxAttempts":3,
-                                       "BackoffRate":2
-                                    }
-                                 ],
-                                 "Next":"LLMEvalMap"
-                              },
-                              "LLMEvalMap":{
-                                 "Type":"Map",
-                                 "ItemProcessor":{
-                                    "ProcessorConfig":{
-                                       "Mode":"INLINE"
-                                    },
-                                    "StartAt":"LLMEvaluate",
-                                    "States":{
-                                       "LLMEvaluate":{
-                                          "Type":"Task",
-                                          "Resource":"arn:aws:states:::lambda:invoke",
-                                          "Parameters":{
-                                             "FunctionName":"${LLMEvalLambdaArn}",
-                                             "Payload":{
-                                                "execution_id.$":"$$.Execution.Id",
-                                                "input.$":"$"
-                                             }
-                                          },
-                                          "Retry":[
-                                             {
-                                                "ErrorEquals":[
-                                                   "States.ALL"
-                                                ],
-                                                "IntervalSeconds":1,
-                                                "MaxAttempts":3,
-                                                "BackoffRate":2
-                                             }
-                                          ],
-                                          "Catch":[
-                                             {
-                                                "ErrorEquals":[
-                                                   "States.ALL"
-                                                ],
-                                                "Next":"NoResult"
-                                             }
-                                          ],
-                                          "End":true,
-                                          "ResultSelector":{
-                                             "result.$":"$.Payload"
-                                          },
-                                          "ResultPath":"$.result"
-                                       },
-                                       "NoResult":{
-                                          "Type":"Succeed"
-                                       }
-                                    }
-                                 },
-                                 "ItemsPath":"$.result",
-                                 "Next":"LLMEval_summarize_result",
-                                 "MaxConcurrency":10
-                              },
-                              "LLMEval_summarize_result":{
-                                 "Type":"Task",
-                                 "Resource":"arn:aws:states:::lambda:invoke",
-                                 "OutputPath":"$.Payload",
-                                 "Parameters":{
-                                    "Payload":{
-                                       "executionId.$":"$$.Execution.Id",
-                                       "input.$":"$"
-                                    },
-                                    "FunctionName":"${EvaluateLLMSummaryArn}"
-                                 },
-                                 "Retry":[
-                                    {
-                                       "ErrorEquals":[
-                                          "States.ALL"
-                                       ],
-                                       "IntervalSeconds":1,
-                                       "MaxAttempts":3,
-                                       "BackoffRate":2
-                                    }
-                                 ],
-                                 "End":true
-                              }
-                           }
+              "Comment": "Evaluate state machine",
+              "StartAt": "Parallel",
+              "States": {
+                "Parallel": {
+                  "Type": "Parallel",
+                  "Branches": [
+                    {
+                      "StartAt": "RAGASEval_input_preprocess",
+                      "States": {
+                        "RAGASEval_input_preprocess": {
+                          "Type": "Task",
+                          "Resource": "arn:aws:states:::lambda:invoke",
+                          "OutputPath": "$.Payload",
+                          "Parameters": {
+                            "Payload.$": "$",
+                            "FunctionName": "${RAGSEvalInputPreprocessorArn}"
+                          },
+                          "Retry": [
+                            {
+                              "ErrorEquals": [
+                                "Lambda.ServiceException",
+                                "Lambda.AWSLambdaException",
+                                "Lambda.SdkClientException",
+                                "Lambda.TooManyRequestsException"
+                              ],
+                              "IntervalSeconds": 1,
+                              "MaxAttempts": 3,
+                              "BackoffRate": 2
+                            }
+                          ],
+                          "Next": "RAGASMap"
                         },
-                        {
-                           "StartAt":"FMEval_input_processor",
-                           "States":{
-                              "FMEval_input_processor":{
-                                 "Type":"Task",
-                                 "Resource":"arn:aws:states:::lambda:invoke",
-                                 "OutputPath":"$.Payload",
-                                 "Parameters":{
-                                    "Payload.$":"$",
-                                    "FunctionName":"${FMEvalValidationInputArn}"
-                                 },
-                                 "Retry":[
-                                    {
-                                       "ErrorEquals":[
-                                          "Lambda.ServiceException",
-                                          "Lambda.AWSLambdaException",
-                                          "Lambda.SdkClientException",
-                                          "Lambda.TooManyRequestsException"
-                                       ],
-                                       "IntervalSeconds":1,
-                                       "MaxAttempts":3,
-                                       "BackoffRate":2
-                                    }
-                                 ],
-                                 "Next":"FMEvalMap"
-                              },
-                            "FMEvalMap":{
-                                 "Type":"Map",
-                                 "ItemProcessor":{
-                                    "ProcessorConfig":{
-                                       "Mode":"INLINE"
-                                    },
-                                    "StartAt":"FMEvaluate",
-                                    "States":{
-                                       "FMEvaluate":{
-                                          "Type":"Task",
-                                          "Resource":"arn:aws:states:::lambda:invoke",
-                                          "Parameters":{
-                                             "FunctionName":"${EvaluateMetricArn}",
-                                             "Payload.$":"$"
-                                          },
-                                          "Retry":[
-                                             {
-                                                "ErrorEquals":[
-                                                   "States.ALL"
-                                                ],
-                                                "IntervalSeconds":1,
-                                                "MaxAttempts":3,
-                                                "BackoffRate":2
-                                             }
-                                          ],
-                                          "End": true,
-                                          "ResultSelector":{
-                                             "result.$":"$.Payload"
-                                          },
-                                          "ResultPath":"$.result"
-                                       }
-                                    }
-                                 },
-                                 "ItemsPath":"$.result",
-                                 "End": true,
-                                 "MaxConcurrency":5
+                        "RAGASMap": {
+                          "Type": "Map",
+                          "ItemProcessor": {
+                            "ProcessorConfig": {
+                              "Mode": "INLINE"
+                            },
+                            "StartAt": "RAGAS_Evaluation",
+                            "States": {
+                              "RAGAS_Evaluation": {
+                                "Type": "Task",
+                                "Resource": "arn:aws:states:::lambda:invoke",
+                                "OutputPath": "$.Payload",
+                                "Parameters": {
+                                  "Payload": {
+                                    "executionId.$": "$$.Execution.Id",
+                                    "input.$": "$"
+                                  },
+                                  "FunctionName": "${RAGSEvaluationArn}"
+                                },
+                                "Retry": [
+                                  {
+                                    "ErrorEquals": [
+                                      "States.ALL"
+                                    ],
+                                    "IntervalSeconds": 1,
+                                    "MaxAttempts": 3,
+                                    "BackoffRate": 2
+                                  }
+                                ],
+                                "End": true
                               }
-                           }
+                            }
+                          },
+                          "End": true,
+                          "MaxConcurrency": 2,
+                          "ItemsPath": "$.result"
                         }
-                     ],
-                     "End":true
-                  }
-               }
+                      }
+                    },
+                    {
+                      "StartAt": "LLMEval_input_preprocess",
+                      "States": {
+                        "LLMEval_input_preprocess": {
+                          "Type": "Task",
+                          "Resource": "arn:aws:states:::lambda:invoke",
+                          "OutputPath": "$.Payload",
+                          "Parameters": {
+                            "Payload.$": "$",
+                            "FunctionName": "${LLMEvalInputProcessorLambdaArn}"
+                          },
+                          "Retry": [
+                            {
+                              "ErrorEquals": [
+                                "States.ALL"
+                              ],
+                              "IntervalSeconds": 1,
+                              "MaxAttempts": 3,
+                              "BackoffRate": 2
+                            }
+                          ],
+                          "Next": "LLMEvalMap"
+                        },
+                        "LLMEvalMap": {
+                          "Type": "Map",
+                          "ItemProcessor": {
+                            "ProcessorConfig": {
+                              "Mode": "INLINE"
+                            },
+                            "StartAt": "LLMEvaluate",
+                            "States": {
+                              "LLMEvaluate": {
+                                "Type": "Task",
+                                "Resource": "arn:aws:states:::lambda:invoke",
+                                "Parameters": {
+                                  "FunctionName": "${LLMEvalLambdaArn}",
+                                  "Payload": {
+                                    "execution_id.$": "$$.Execution.Id",
+                                    "input.$": "$"
+                                  }
+                                },
+                                "Retry": [
+                                  {
+                                    "ErrorEquals": [
+                                      "States.ALL"
+                                    ],
+                                    "IntervalSeconds": 1,
+                                    "MaxAttempts": 3,
+                                    "BackoffRate": 2
+                                  }
+                                ],
+                                "Catch": [
+                                  {
+                                    "ErrorEquals": [
+                                      "States.ALL"
+                                    ],
+                                    "Next": "NoResult"
+                                  }
+                                ],
+                                "End": true,
+                                "ResultSelector": {
+                                  "result.$": "$.Payload"
+                                },
+                                "ResultPath": "$.result"
+                              },
+                              "NoResult": {
+                                "Type": "Succeed"
+                              }
+                            }
+                          },
+                          "ItemsPath": "$.result",
+                          "End": true,
+                          "MaxConcurrency": 1
+                        }
+                      }
+                    },
+                    {
+                      "StartAt": "FMEval_input_preprocessor",
+                      "States": {
+                        "FMEval_input_preprocessor": {
+                          "Type": "Task",
+                          "Resource": "arn:aws:states:::lambda:invoke",
+                          "OutputPath": "$.Payload",
+                          "Parameters": {
+                            "Payload.$": "$",
+                            "FunctionName": "${FMEvalValidationInputArn}"
+                          },
+                          "Retry": [
+                            {
+                              "ErrorEquals": [
+                                "Lambda.ServiceException",
+                                "Lambda.AWSLambdaException",
+                                "Lambda.SdkClientException",
+                                "Lambda.TooManyRequestsException"
+                              ],
+                              "IntervalSeconds": 1,
+                              "MaxAttempts": 3,
+                              "BackoffRate": 2
+                            }
+                          ],
+                          "Next": "FMEvalMap"
+                        },
+                        "FMEvalMap": {
+                          "Type": "Map",
+                          "ItemProcessor": {
+                            "ProcessorConfig": {
+                              "Mode": "INLINE"
+                            },
+                            "StartAt": "FMEvaluate",
+                            "States": {
+                              "FMEvaluate": {
+                                "Type": "Task",
+                                "Resource": "arn:aws:states:::lambda:invoke",
+                                "Parameters": {
+                                  "FunctionName": "${EvaluateMetricArn}",
+                                  "Payload.$": "$"
+                                },
+                                "Retry": [
+                                  {
+                                    "ErrorEquals": [
+                                      "States.ALL"
+                                    ],
+                                    "IntervalSeconds": 1,
+                                    "MaxAttempts": 3,
+                                    "BackoffRate": 2
+                                  }
+                                ],
+                                "End": true,
+                                "ResultSelector": {
+                                  "result.$": "$.Payload"
+                                },
+                                "ResultPath": "$.result"
+                              }
+                            }
+                          },
+                          "ItemsPath": "$.result",
+                          "End": true,
+                          "MaxConcurrency": 5
+                        }
+                      }
+                    }
+                  ],
+                  "End": true
+                }
+              }
             }
           - {
             LLMEvalInputProcessorLambdaArn: !GetAtt ValidateLLMEvaluateInput.Arn,
             LLMEvalLambdaArn: !GetAtt EvaluateLLM.Arn,
-            EvaluateLLMSummaryArn: !GetAtt EvaluationResultSummary.Arn,
             FMEvalValidationInputArn: !GetAtt FMEvalValidationInput.Arn,
-            EvaluateMetricArn: !GetAtt EvaluateMetric.Arn
+            EvaluateMetricArn: !GetAtt EvaluateMetric.Arn,
+            RAGSEvaluationArn: !GetAtt REGASLambdaEvaluation.Arn,
+            RAGSEvalInputPreprocessorArn: !GetAtt REGASLambdaEvaluationPreprocess.Arn
           }
       RoleArn: !GetAtt LLMIEvaluationStatesExecutionRole.Arn
   InvokeLLM:
@@ -805,22 +526,20 @@ Resources:
     Properties:
       FunctionName: invoke_llm_lambda
       Handler: invoke_llm_handler.handler
-      Runtime: python3.9
+      Runtime: python3.10
       CodeUri: ../lambda
-      MemorySize: 1024
-      VpcConfig:
-        SubnetIds:
-          - !Ref PrivateSubnetA
-          - !Ref PrivateSubnetB
-        SecurityGroupIds:
-          - !Ref SecurityGroup
-      Timeout: 100
+      MemorySize: 10240
+      Timeout: 900
+      EphemeralStorage:
+        Size: 1024
       Environment:
         Variables:
           ResultBucket: !Sub '${EvaluationBucket}'
-          LLMEndpoint: !Sub "http://${LLMInternalALB.DNSName}:8001/invoke"
+          LIB_BUCKET: !Sub 'eval-${AWS::AccountId}-${AWS::Region}'
+          LIB_FILE: "lambda_extra_package.zip"
+          KB_ID: !Ref KnowledgeBaseWithAoss
       Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:10
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python310:20
       Policies:
         - AWSLambdaVPCAccessExecutionRole
         - Version: '2012-10-17'
@@ -837,12 +556,12 @@ Resources:
     Properties:
       FunctionName: invoke_llm_result_summary
       Handler: invoke_llm_result_summary.handler
-      Runtime: python3.9
+      Runtime: python3.10
       CodeUri: ../lambda
       MemorySize: 1024
       Timeout: 30
       Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:10
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python310:20
       Environment:
         Variables:
           ResultBucket: !Sub '${EvaluationBucket}'
@@ -861,23 +580,21 @@ Resources:
     Properties:
       FunctionName: evaluate_llm_lambda
       Handler: evaluate_llm_handler.handler
-      Runtime: python3.9
+      Runtime: python3.10
       CodeUri: ../lambda
-      MemorySize: 1024
-      VpcConfig:
-        SubnetIds:
-          - !Ref PrivateSubnetA
-          - !Ref PrivateSubnetB
-        SecurityGroupIds:
-          - !Ref SecurityGroup
+      MemorySize: 10240
+      EphemeralStorage:
+        Size: 1024
+
       Environment:
         Variables:
           ResultBucket: !Sub '${EvaluationBucket}'
-          LLMEndpoint: !Sub "http://${LLMInternalALB.DNSName}:8001/invoke"
+          LIB_BUCKET: !Sub 'eval-${AWS::AccountId}-${AWS::Region}'
+          LIB_FILE: "lambda_extra_package.zip"
+          ResultDatabase: !Ref ResultDatabase
       Timeout: 200
       Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:10
-        - !Ref Boto3Layer
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python310:20
       Policies:
         - AWSLambdaVPCAccessExecutionRole
         - Version: '2012-10-17'
@@ -890,25 +607,20 @@ Resources:
                 - sagemaker:*
                 - dynamodb:GetItem
                 - dynamodb:Query
+                - glue:GetTable
+                - glue:GetDatabase
+                - glue:CreateTable
+                - glue:UpdateTable
+                - glue:BatchCreatePartition
               Resource: "*"
 
-  Boto3Layer:
-    Type: AWS::Lambda::LayerVersion
-    Properties:
-      LayerName: boto3-layer
-      Description: "new boto3 layer with bedrock-runtime service"
-      Content:
-        S3Bucket: !Sub "eval-${AWS::AccountId}-${AWS::Region}"
-        S3Key: boto3-layer.zip
-      CompatibleRuntimes:
-        - python3.9
 
   EvaluateMetric:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: evaluate_metrics_lambda
       Handler: eval_metrics.lambda_handler
-      Runtime: python3.9
+      Runtime: python3.10
       CodeUri: ../lambda
       MemorySize: 1024
       Environment:
@@ -938,12 +650,12 @@ Resources:
     Properties:
       FunctionName: invoke_llm_convert_to_json
       Handler: invoke_llm_convert_to_json.handler
-      Runtime: python3.9
+      Runtime: python3.10
       CodeUri: ../lambda
       MemorySize: 1024
       Timeout: 5
       Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:10
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python310:20
       Policies:
         - AWSLambdaExecute
         - Version: '2012-10-17'
@@ -959,7 +671,7 @@ Resources:
     Properties:
       FunctionName: evaluate_llm_input_validation
       Handler: evaluate_llm_input_validation.handler
-      Runtime: python3.9
+      Runtime: python3.10
       CodeUri: ../lambda
       MemorySize: 1024
       Timeout: 5
@@ -978,9 +690,9 @@ Resources:
   FMEvalValidationInput:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: fmeval_input_validation
-      Handler: fmeval_input_validation.handler
-      Runtime: python3.9
+      FunctionName: fmeval_input_preprocessor
+      Handler: fmeval_input_preprocessor.handler
+      Runtime: python3.10
       CodeUri: ../lambda
       MemorySize: 1024
       Timeout: 5
@@ -1001,12 +713,12 @@ Resources:
     Properties:
       FunctionName: evaluate_llm_result_summary
       Handler: evaluate_llm_result_summary.handler
-      Runtime: python3.9
+      Runtime: python3.10
       CodeUri: ../lambda
       MemorySize: 1024
       Timeout: 30
       Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python39:10
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python310:20
       Environment:
         Variables:
           ResultBucket: !Sub '${EvaluationBucket}'
@@ -1026,6 +738,41 @@ Resources:
                 - glue:BatchCreatePartition
               Resource: "*"
 
+  RESTAPIStartSF:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+
+  RESTAPIStartSFLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: llm_eval_solution_start_sf
+      Handler: start_sf.lambda_handler
+      Runtime: python3.10
+      CodeUri: ../lambda
+      MemorySize: 1024
+      Timeout: 30
+      Environment:
+        Variables:
+          INVOKE_STATE_MACHINE_ARN: !Ref InvokeLLMStateMachine
+          EVALUATE_STATE_MACHINE_ARN: !Ref EvaluateLLMStateMachine
+      Policies:
+        - AWSLambdaExecute
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - states:StartExecution
+              Resource:
+                - !Ref InvokeLLMStateMachine
+                - !Ref EvaluateLLMStateMachine
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /startsf
+            Method: POST
+            RestApiId: !Ref RESTAPIStartSF
 
   SolutionTableDDB:
     Type: AWS::DynamoDB::Table
@@ -1072,3 +819,249 @@ Resources:
       CatalogId: !Ref AWS::AccountId
       DatabaseInput:
         Name: "llmeval_result"
+
+
+
+#REGAS related resource
+  REGASLambdaEvaluation:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: llm_eval_solution_regas_evaluation
+      Handler: evaluate_ragas_handler.lambda_handler
+      Runtime: python3.10
+      CodeUri: ../lambda
+      MemorySize: 10240
+      Timeout: 900
+      EphemeralStorage:
+        Size: 1024
+      Environment:
+        Variables:
+          LIB_BUCKET: !Sub 'eval-${AWS::AccountId}-${AWS::Region}'
+          LIB_FILE: "lambda_extra_package.zip"
+          RESULTBUCKET: !Sub '${EvaluationBucket}'
+          ResultDatabase: !Ref ResultDatabase
+          KB_ID: !Ref KnowledgeBaseWithAoss
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - AmazonS3FullAccess
+        - AmazonBedrockFullAccess
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - glue:GetTable
+                - glue:GetDatabase
+                - glue:CreateTable
+                - glue:UpdateTable
+                - glue:BatchCreatePartition
+              Resource: "*"
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python310:20
+
+  REGASLambdaEvaluationPreprocess:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ragaseval_input_preprocess
+      Handler: ragaseval_input_preprocess.lambda_handler
+      Runtime: python3.10
+      CodeUri: ../lambda
+      MemorySize: 10240
+      Timeout: 900
+      EphemeralStorage:
+        Size: 1024
+      Environment:
+        Variables:
+          LIB_BUCKET: !Sub 'eval-${AWS::AccountId}-${AWS::Region}'
+          LIB_FILE: "lambda_extra_package.zip"
+          RESULTBUCKET: !Sub '${EvaluationBucket}'
+          ResultDatabase: !Ref ResultDatabase
+          KB_ID: !Ref KnowledgeBaseWithAoss
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - AmazonS3FullAccess
+        - AmazonBedrockFullAccess
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - glue:GetTable
+                - glue:GetDatabase
+                - glue:CreateTable
+                - glue:UpdateTable
+                - glue:BatchCreatePartition
+              Resource: "*"
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python310:20
+
+  DataAccessPolicy:
+    Type: 'AWS::OpenSearchServerless::AccessPolicy'
+    Properties:
+      Name: kb-access-policy
+      Type: data
+      Description: Data Access policy for collection
+      Policy: !Sub >-
+        [{"Description":"Access for cfn user","Rules":[{"ResourceType":"index","Resource":["index/*/*"],"Permission":["aoss:*"]},
+        {"ResourceType":"collection","Resource":["collection/${CollectionName}"],"Permission":["aoss:*"]}],
+        "Principal":[
+        "arn:aws:iam::${AWS::AccountId}:role/kb-role-${AWS::AccountId}-${AWS::Region}",
+        "arn:aws:iam::${AWS::AccountId}:role/cr-role-${AWS::AccountId}-${AWS::Region}"
+        ]}]
+    DependsOn: KnowledgeBaseRole
+
+  NetworkPolicy:
+    Type: 'AWS::OpenSearchServerless::SecurityPolicy'
+    Properties:
+      Name: kb-network-policy
+      Type: network
+      Description: Network policy for kbcollection collection
+      Policy: !Sub >-
+        [{"Rules":[{"ResourceType":"collection","Resource":["collection/${CollectionName}"]}, {"ResourceType":"dashboard","Resource":["collection/${CollectionName}"]}],"AllowFromPublic":true}]
+
+
+  EncryptionPolicy:
+    Type: 'AWS::OpenSearchServerless::SecurityPolicy'
+    Properties:
+      Name: kb-encryption-policy
+      Type: encryption
+      Description: Encryption policy for kbcollection collection
+      Policy: !Sub >-
+        {"Rules":[{"ResourceType":"collection","Resource":["collection/${CollectionName}"]}],"AWSOwnedKey":true}
+
+
+
+  Collection:
+    Type: 'AWS::OpenSearchServerless::Collection'
+    Properties:
+      Name: !Ref CollectionName
+      Type: VECTORSEARCH
+      Description: Collection to holds timeseries data
+    DependsOn: EncryptionPolicy
+#
+  KnowledgeBaseBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName:
+        Fn::Sub: 'bedrock-kb-${AWS::AccountId}-${AWS::Region}'
+
+  KnowledgeBaseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "kb-role-${AWS::AccountId}-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - !Ref KnowledgeBaseRolePolicy
+        # it looks like it needs some permission i don't know so at the moment deploy with admin
+        - 'arn:aws:iam::aws:policy/AdministratorAccess'
+
+  KnowledgeBaseRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'opensearchserverless:BatchGetDocuments'
+              - 'opensearchserverless:BatchPutDocuments'
+              - 'opensearchserverless:DeleteCollection'
+              - 'opensearchserverless:DeleteDocument'
+              - 'opensearchserverless:DescribeCollection'
+              - 'opensearchserverless:DescribeDocumentPath'
+              - 'opensearchserverless:GetDocument'
+              - 'opensearchserverless:ListCollections'
+              - 'opensearchserverless:ListDocumentPaths'
+              - 'opensearchserverless:UpdateCollection'
+            Resource: [ "*" ] #!GetAtt OpenSearchCollection.Arn
+
+
+  KnowledgeBaseWithAoss:
+    Type: AWS::Bedrock::KnowledgeBase
+    Properties:
+      Name: "KnowledgeBase"
+      Description: "KnowledgeBase"
+      RoleArn: !GetAtt KnowledgeBaseRole.Arn
+      KnowledgeBaseConfiguration:
+        Type: "VECTOR"
+        VectorKnowledgeBaseConfiguration:
+          EmbeddingModelArn: !Sub "arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v1"
+      StorageConfiguration:
+        Type: "OPENSEARCH_SERVERLESS"
+        OpensearchServerlessConfiguration:
+          CollectionArn: !GetAtt Collection.Arn
+          VectorIndexName: !Ref IndexName
+          FieldMapping:
+            VectorField: "index"
+            TextField: "AMAZON_BEDROCK_TEXT_CHUNK"
+            MetadataField: "AMAZON_BEDROCK_METADATA"
+    DependsOn: VectorIndex
+
+  KnowledgeBaseDataSource:
+    Type: AWS::Bedrock::DataSource
+    Properties:
+      KnowledgeBaseId: !Ref KnowledgeBaseWithAoss
+      Name: "KnowledgeBaseDataSource"
+      Description: "KnowledgeBase data soruce"
+      DataSourceConfiguration:
+        Type: "S3"
+        S3Configuration:
+          BucketArn:
+            !Join
+            - ''
+            - - 'arn:aws:s3:::'
+              - !Ref KnowledgeBaseBucket
+          InclusionPrefixes: [ "knowledgesource/" ]
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: !Sub "eval-${AWS::AccountId}-${AWS::Region}"
+        S3Key: custom_resource/lambda_function.zip
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.10
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60
+      Environment:
+        Variables:
+          OPENSEARCH_HOSTNAME: !GetAtt Collection.Id
+          OPENSEARCH_INDEX_NAME: !Ref IndexName
+          EMBEDDING_MODEL: amazon.titan-embed-text-v1
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "cr-role-${AWS::AccountId}-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AdministratorAccess
+
+  VectorIndex:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt LambdaFunction.Arn
+      CollectionArn: !GetAtt Collection.Arn
+      IndexName: !Ref IndexName
+      EmbeddingModel: amazon.titan-embed-text-v1
+
+#Outputs:
+#
+#  KnowledgeBaseWithAoss:
+#    Value: !Ref KnowledgeBaseWithAoss
+#  KnowledgeBaseDataSource:
+#    Value: !GetAtt KnowledgeBaseDataSource.DataSourceId
+

@@ -24,9 +24,34 @@ else
   echo "Bucket $BUCKET already exists, using the bucket"
 fi
 
-# update the boto3 layer into s3
-echo "Updating boto3 layer into s3..."
-aws s3 cp ./boto3-layer.zip s3://$BUCKET/boto3-layer.zip
+ cd custom_resource
+
+ # Install the required packages into a directory named 'package'
+ pip install -r requirements.txt -t package
+
+ # Navigate to the package directory
+ cd package
+
+# Copy the lambda_handler.py into the package directory
+ cp ../lambda_function.py .
+
+# Zip the contents of the package directory into a file named lambda_function.zip
+ zip -r ../lambda_function.zip .
+
+# Navigate back to the custom_resource directory
+cd ..
+
+## Clean up by removing the package directory
+rm -rf package
+
+
+echo "Lambda function package created: custom_resource/lambda_function.zip"
+
+# copy to s3 as package
+aws s3 cp lambda_function.zip s3://$BUCKET/custom_resource/lambda_function.zip
+
+
+cd ..
 
 # Export bucket name as environment variable
 export EVAL_PIPELINE_BUCKET=$BUCKET
@@ -54,6 +79,31 @@ echo "api layer build completed"
 # back to the setup folder
 cd ../infrastructure
 
+# back to the setup folder
+cd ../infrastructure
+zip_file_name="lambda_extra_package.zip"
+# if the file exists, skip the zip command
+if [ -f "$zip_file_name" ]; then
+    echo "$zip_file_name already exists, skipping the zip command"
+else
+    mkdir packages
+    pip install --platform manylinux2014_x86_64 --target ./packages -r requirements_lambda.txt --only-binary=:all:
+    cd packages
+    zip -r ../$zip_file_name .
+    cd ..
+    rm -rf packages
+fi
+
+# upload the zip file to s3
+echo "uploading lambda extra package to s3..."
+aws s3 cp $zip_file_name s3://$BUCKET/$zip_file_name --region $REGION
+
+rm -rf $zip_file_name
+
+# create a lambda package
+echo "creating lambda package..."
+
+
 # sam build
 echo "sam build..."
 sam build
@@ -66,6 +116,12 @@ sam package --s3-bucket $BUCKET --output-template-file packaged.yaml --region $R
 echo "sam deploy..."
 sam deploy --template-file packaged.yaml --stack-name llm-evaluation-stack --capabilities CAPABILITY_NAMED_IAM --parameter-overrides TrainingURL=763104351884.dkr.ecr.$REGION.amazonaws.com/pytorch-training:2.1.0-cpu-py310 --region $REGION
 
+# get the cloudformation output values KnowledgeBaseWithAoss and KnowledgeBaseDataSource
+echo "getting the cloudformation output values..."
+KNOWLEDGE_BASE_WITH_AOSS=$(aws cloudformation describe-stacks --stack-name llm-evaluation-stack --query 'Stacks[0].Outputs[?OutputKey==`KnowledgeBaseWithAoss`].OutputValue' --output text --region $REGION)
+echo "KnowledgeBaseWithAoss: $KNOWLEDGE_BASE_WITH_AOSS"
+KNOWLEDGE_BASE_DATA_SOURCE=$(aws cloudformation describe-stacks --stack-name llm-evaluation-stack --query 'Stacks[0].Outputs[?OutputKey==`KnowledgeBaseDataSource`].OutputValue' --output text --region $REGION)
+echo "KnowledgeBaseDataSource: $KNOWLEDGE_BASE_DATA_SOURCE"
 
 # Get the approximate number of items in the table
 ITEM_COUNT=$(aws dynamodb describe-table --table-name SolutionTableDDB | jq .Table.ItemCount)
@@ -97,3 +153,11 @@ if [ "$ITEM_COUNT" -eq "0" ]; then
 else
   echo "Table SolutionTableDDB already contains $ITEM_COUNT items"
 fi
+
+# put the sample document to knowledge base
+echo "putting sample document to knowledge base..."
+aws s3 cp ../evaluation_artifacts/Amazon_SageMaker_Developer_Guide.pdf s3://bedrock-kb-$ACCOUNT_ID-$REGION/knowledgesource/
+
+echo "sync the data via data source sync"
+# aws bedrock-agent start-ingestion-job --knowledge-base-id $KNOWLEDGE_BASE_WITH_AOSS --data-source-id $KNOWLEDGE_BASE_DATA_SOURCE --region $REGION
+

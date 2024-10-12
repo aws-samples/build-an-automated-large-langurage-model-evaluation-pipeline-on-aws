@@ -1,0 +1,15 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'Amazon OpenSearch Serverless template to create an IAM user, encryption policy, data access policy and collection'
+Resources:
+  IAMUSer:
+    Type: 'AWS::IAM::User'
+    Properties:
+      UserName:  aossadmin
+
+Outputs:
+  IAMUser:
+    Value: !Ref IAMUSer
+  DashboardURL:
+    Value: !GetAtt Collection.DashboardEndpoint
+  CollectionARN:
+    Value: !GetAtt Collection.Arn

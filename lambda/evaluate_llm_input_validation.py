@@ -1,43 +1,76 @@
 import boto3
 from handlers.utils.evaluation_util import EvaluationUtils
+import json
+import pickle
 
 s3_client = boto3.client('s3')
 evaluation_utils = EvaluationUtils("SolutionTableDDB")
 
 
-def handler(event, context):
-    available_metrics = evaluation_utils.get_all_metrics()
-    evaluation_metrics = event.get("metrics", [])
+def read_jsonl_generator(file_path):
+    with open(file_path, 'r') as jsonl_file:
+        for line in jsonl_file:
+            yield json.loads(line.strip())
 
-    if "evaluation_model_family" not in event:
-        raise Exception("no evaluation_model_family in event")
+
+def handler(event, context):
+    print(event)
+    available_metrics = [
+        "Cosine Metric",
+        "Accuracy Check",
+        "Compact Check",
+        "Form Check",
+        "Redundancy Check",
+        "Relevancy Check",
+        "Sanity Check",
+    ]
+
+    if "evaluation_location" not in event:
+        raise Exception("evaluation_location is required")
+
+    evaluation_metrics = event.get("evaluation_metrics")
 
     if "evaluation_model_name" not in event:
         raise Exception("no evaluation_model_name in event")
 
-    for metric in evaluation_metrics:
-        if metric not in available_metrics:
-            del evaluation_metrics[metric]
-
-    if len(evaluation_metrics) == 0:
-        evaluation_metrics = available_metrics
-
-    # handle the s3 location
-    if "evaluation_location" not in event:
-        raise Exception("evaluation_location is required")
+    metrics = [metric for metric in evaluation_metrics if metric in available_metrics]
 
     s3_location = event["evaluation_location"]
 
     bucket, key = parse_s3_location(s3_location)
+    key_path = '/'.join(key.split('/')[:-1])
     if not object_exists(s3_client, bucket, key):
         raise Exception("evaluation_location does not exist")
-    json_lines = parse_s3_jsonl_object(s3_client, bucket, key)
-    result = [{"evaluation_metrics": evaluation_metrics, "model_family": event['evaluation_model_family'],
-               "model_name": event['evaluation_model_name'], "evaluation_question_answer": eachline} for eachline in
-              json_lines]
+
+    # download the jsonl file from s3 and split them into pickle files
+    s3_client.download_file(bucket, key, '/tmp/input.jsonl')
+    pickle_list = []
+    index = 0
+    for item in read_jsonl_generator('/tmp/input.jsonl'):
+        # Process each item (dictionary) here
+        data = {
+            "question": item["QUESTION"],
+            "answer": item['Response'],
+            "contexts": item['CONTEXT'],
+            "ground_truth": item['ExpectedAnswer']
+        }
+        file = f'/tmp/llm_{index}.pkl'
+        target_key = f'{key_path}/llm_{index}.pkl'
+
+        with open(file, 'wb') as handle:
+            pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+        s3_client.upload_file(file, bucket, target_key)
+        pickle_list.append(f"s3://{bucket}/{target_key}")
+
+        index += 1
+
+    result = [{"evaluation_metrics": metrics,
+               "model_family": event['evaluation_model_family'],
+               "model_name": event['evaluation_model_name'],
+               "evaluation_location": eachline} for eachline in pickle_list]
 
     return {"result": result}
-
 
 def parse_s3_location(location):
     """Parse s3 URL into bucket and prefix."""
@@ -55,9 +88,7 @@ def parse_s3_location(location):
     if not prefix.endswith(".jsonl"):
         raise Exception("Invalid S3 URL")
 
-
     return bucket, prefix
-
 
 def object_exists(s3_client, bucket, key):
     """Check if an object exists by trying to retrieve metadata about the object."""
@@ -66,20 +97,4 @@ def object_exists(s3_client, bucket, key):
         return True
     except s3_client.exceptions.ClientError as e:
         return False
-
-# given the bucket and key which is a jsonl file, return a list of jsonl content
-def parse_s3_jsonl_object(s3_cleint, bucket_name, object_key):
-
-    try:
-        response = s3_cleint.get_object(Bucket=bucket_name, Key=object_key)
-        content = response['Body'].read().decode('utf-8')
-        # replace " with ' in content
-        content = content.replace('"', "'")
-        # Split the content into lines and return as a list
-        json_lines = content.split('\n')
-        return json_lines
-
-    except Exception as e:
-        print(f"Error reading S3 object: {e}")
-        return []
 
