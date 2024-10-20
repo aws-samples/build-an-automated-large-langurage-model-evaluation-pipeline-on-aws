@@ -581,6 +581,7 @@ Resources:
     Properties:
       StageName: Prod
 
+
   RESTAPIStartSFLambda:
     Type: AWS::Serverless::Function
     Properties:
@@ -1145,10 +1146,10 @@ Resources:
       RoleArn: !GetAtt LLMIEvaluationStatesExecutionRole.Arn
 
 
-#Outputs:
-#
-#  KnowledgeBaseWithAoss:
-#    Value: !Ref KnowledgeBaseWithAoss
-#  KnowledgeBaseDataSource:
-#    Value: !GetAtt KnowledgeBaseDataSource.DataSourceId
+Outputs:
+  APIGatewayEndpoint:
+    Description: "API Gateway endpoint URL for Prod stage"
+    Value: !Sub "https://${RESTAPIStartSF}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+    Export:
+      Name: !Sub "${AWS::StackName}-APIGatewayEndpoint"
 
