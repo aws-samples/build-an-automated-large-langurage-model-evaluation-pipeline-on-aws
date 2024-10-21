@@ -50,37 +50,45 @@ echo "Lambda function package created: custom_resource/lambda_function.zip"
 # copy to s3 as package
 aws s3 cp lambda_function.zip s3://$BUCKET/custom_resource/lambda_function.zip
 
+# delete the local zip file
+rm lambda_function.zip
+
+cd ..
+
+# create the llmmeter sample code package
+cd llmetersample
+
+# Install the required packages into a directory named 'package'
+pip install -r requirements.txt -t package
+
+# Navigate to the package directory
+cd package
+
+# Copy the lambda_handler.py into the package directory
+cp ../lambda_function.py .
+
+# Zip the contents of the package directory into a file named lambda_function.zip
+zip -r ../lambda_function.zip .
+
+# Navigate back to the llmetersample directory
+cd ..
+
+## Clean up by removing the package directory
+rm -rf package
+
+echo "Lambda function package created: llmetersample/lambda_function.zip"
+
+# copy to s3 as package
+aws s3 cp lambda_function.zip s3://$BUCKET/llmetersample/lambda_function.zip
+
+rm lambda_function.zip
 
 cd ..
 
 # Export bucket name as environment variable
 export EVAL_PIPELINE_BUCKET=$BUCKET
 
-# create a ecr repository
-echo "check if api-layer repository exists..."
-aws ecr describe-repositories --repository-names api-layer --region $REGION 1>/dev/null 2>/dev/null
-if [ $? -ne 0 ]; then
-    echo "api-layer repository does not exist, creating..."
-    aws ecr create-repository --repository-name api-layer --region $REGION
-    echo "api-layer repository created"
-fi
 
-# build the api layer
-echo "login to ecr..."
-aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com
-echo "building api layer..."
-cd ../api-layer
-docker build -t api-layer .
-docker tag api-layer:latest $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/api-layer:latest
-docker push $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/api-layer:latest
-echo "api layer build completed"
-
-
-# back to the setup folder
-cd ../infrastructure
-
-# back to the setup folder
-cd ../infrastructure
 zip_file_name="lambda_extra_package.zip"
 # if the file exists, skip the zip command
 if [ -f "$zip_file_name" ]; then
@@ -144,15 +152,6 @@ else
   echo "Table SolutionTableDDB already contains $ITEM_COUNT items"
 fi
 
-ITEM_COUNT=$(aws dynamodb describe-table --table-name api-layer-ddb| jq .Table.ItemCount)
-
-# Check if table is empty
-if [ "$ITEM_COUNT" -eq "0" ]; then
-  echo "Table api-layer-ddb is empty... ingesting data"
-  aws dynamodb batch-write-item --request-items file://api-layer-ddb-data.json
-else
-  echo "Table SolutionTableDDB already contains $ITEM_COUNT items"
-fi
 
 # put the sample document to knowledge base
 echo "putting sample document to knowledge base..."
