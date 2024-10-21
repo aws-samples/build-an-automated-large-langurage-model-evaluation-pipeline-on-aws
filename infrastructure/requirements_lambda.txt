@@ -1,2 +1,2 @@
-ragas
-langchain_aws
+ragas==0.1.9
+langchain_aws==0.1.18
