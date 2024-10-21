@@ -28,9 +28,41 @@ kb_id = os.environ.get('KB_ID')
 
 s3 = boto3.client('s3')
 bedrock_client = boto3.client(service_name='bedrock-runtime')
+bedrock_agent_client = boto3.client('bedrock-agent')
+
+
+def get_answer_from_api_with_prompt_id(model_name, context, question, prompt_id):
+    
+    prompt_from_bedrock = bedrock_agent_client.get_prompt(
+            promptIdentifier=prompt_id,
+        )
+    
+    prompt_text = prompt_from_bedrock["variants"][-1]['templateConfiguration']['text']['text']
+    
+    temperature = prompt_from_bedrock["variants"][-1]['inferenceConfiguration']['text'].get("temperature", 0.0)
+    topP = prompt_from_bedrock["variants"][-1]['inferenceConfiguration']['text'].get("topP", 0.9)
+    maxTokens = prompt_from_bedrock["variants"][-1]['inferenceConfiguration']['text'].get("maxTokens", 4096)
+    
+    formatted_prompt_template = prompt_text.replace("{{", "{").replace("}}", "}").format( context = context)
+
+    formatted_prompt_template = formatted_prompt_template + "\nQuestion: " + question
+    
+    message = {
+        "role": "user",
+        "content": [{"text": formatted_prompt_template}]
+    }
+
+    messages = [message]
+    
+    answer = generate_result(bedrock_client, model_name, None, messages,  temperature = temperature,  topP = topP, maxTokens = maxTokens)
+
+    return answer
+
+
 
 def get_answer_from_api(model_name, context, question):
-
+    
+    
     system_prompts = [{"text": "You are an smart AI assistant to provide a concise answer to the question to user, use the context provided, If you don't know the answer, just say that you don't know, don't try to make up an answer. Below is the context"
               f"{context}"}]
 

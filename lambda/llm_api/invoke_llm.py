@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO)
 def generate_result(bedrock_client,
                       model_id,
                       system_prompts,
-                      messages):
+                      messages, **kwargs):
     """
     Sends messages to a model.
     Args:
@@ -34,23 +34,32 @@ def generate_result(bedrock_client,
     logger.info("Generating message with model %s", model_id)
 
     # Inference parameters to use.
-    temperature = 0.5
-    top_k = 200
+    temperature = kwargs.get("temperature", 0.5)
+    top_k = kwargs.get("top_k", 250)
+    top_p = kwargs.get("top_p", 1.0)
+    max_tokens = kwargs.get("max_tokens", 200)
 
     # Base inference parameters to use.
-    inference_config = {"temperature": temperature}
+    inference_config = {"temperature": temperature, "topK": top_k, "topP": top_p, "maxTokens": max_tokens}
     # Additional inference parameters to use.
     additional_model_fields = {"top_k": top_k}
 
     # Send the message.
-    response = bedrock_client.converse(
-        modelId=model_id,
-        messages=messages,
-        system=system_prompts,
-        inferenceConfig=inference_config,
-        additionalModelRequestFields=additional_model_fields
-    )
-
+    if system_prompts:
+        response = bedrock_client.converse(
+            modelId=model_id,
+            messages=messages,
+            system=system_prompts,
+            inferenceConfig=inference_config,
+            additionalModelRequestFields=additional_model_fields
+        )
+    else:
+        response = bedrock_client.converse(
+            modelId=model_id,
+            messages=messages,
+            inferenceConfig=inference_config,
+            additionalModelRequestFields=additional_model_fields
+        )
     # Log token usage.
     logger.info(response['output']['message'])
     text_result = response['output']['message']['content'][0]['text']
