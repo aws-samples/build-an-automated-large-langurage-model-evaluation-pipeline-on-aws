@@ -1145,6 +1145,42 @@ Resources:
           }
       RoleArn: !GetAtt LLMIEvaluationStatesExecutionRole.Arn
 
+### llmeter related
+  LLMeter:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: llmeter_lambda
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.10
+      CodeUri:
+        Bucket: !Sub "eval-${AWS::AccountId}-${AWS::Region}"
+        Key: "llmetersample/lambda_function.zip"
+      MemorySize: 10240
+      Timeout: 200
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:336392948345:layer:AWSSDKPandas-Python310:20
+      Environment:
+        Variables:
+          RESULTBUCKET: !Sub '${EvaluationBucket}'
+          ResultDatabase: !Ref ResultDatabase
+      Policies:
+        - AWSLambdaVPCAccessExecutionRole
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                # TODO narrow down
+                - s3:*
+                - bedrock:*
+                - dynamodb:GetItem
+                - dynamodb:Query
+                - glue:GetTable
+                - glue:GetDatabase
+                - glue:CreateTable
+                - glue:UpdateTable
+                - glue:BatchCreatePartition
+              Resource: "*"
+
 
 Outputs:
   APIGatewayEndpoint:

@@ -4,8 +4,13 @@ import asyncio
 from upath import UPath  # Combined APIs for accessing cloud or local storage
 import boto3
 import json
+import awswrangler as wr
 
 model_id = "anthropic.claude-3-haiku-20240307-v1:0"
+import os
+
+bucket_name = os.getenv("ResultBucket")
+database_name = os.getenv("ResultDatabase")
 
 
 def parse_s3_location(location):
@@ -98,7 +103,21 @@ async def handler(event, context):
 
     results = await endpoint_test.run(payload=sample_payload, n_requests=3, clients=3)
 
-    print(results)
+    path = f"s3://{bucket_name}/llmeter_result/"
+
+    result_df = wr.pandas.DataFrame([results])
+    result_df['execution_id'] = context.request_id
+
+    wr.s3.to_parquet(
+        df=result_df,
+        path=path,
+        index=False,
+        dataset=True,
+        mode="append",
+        database=database_name,
+        partition_cols=['execution_id'],
+        table="llmeter_result"
+    )
 
     return {"foo": "bar"}
 
