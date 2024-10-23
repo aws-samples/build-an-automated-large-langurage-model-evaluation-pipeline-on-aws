@@ -23,7 +23,7 @@ AWS provides us with wide range of services that we can use to build a solution 
 
 Below is the solution architecture diagram of this LLM auto eval pipeline solution.
 
-![Architecture](Assets/eval-prompt-ops-update.png)
+![Architecture](Assets/auto-llm-eval-pipeline-v6-ragas-br.drawio.png)
 
 Some of the key components are detailed as below:
 
