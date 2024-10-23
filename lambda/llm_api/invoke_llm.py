@@ -35,14 +35,12 @@ def generate_result(bedrock_client,
 
     # Inference parameters to use.
     temperature = kwargs.get("temperature", 0.5)
-    top_k = kwargs.get("top_k", 250)
     top_p = kwargs.get("top_p", 1.0)
     max_tokens = kwargs.get("max_tokens", 200)
 
     # Base inference parameters to use.
-    inference_config = {"temperature": temperature, "topK": top_k, "topP": top_p, "maxTokens": max_tokens}
+    inference_config = {"temperature": temperature,  "topP": top_p, "maxTokens": max_tokens}
     # Additional inference parameters to use.
-    additional_model_fields = {"top_k": top_k}
 
     # Send the message.
     if system_prompts:
@@ -50,15 +48,13 @@ def generate_result(bedrock_client,
             modelId=model_id,
             messages=messages,
             system=system_prompts,
-            inferenceConfig=inference_config,
-            additionalModelRequestFields=additional_model_fields
+            inferenceConfig=inference_config
         )
     else:
         response = bedrock_client.converse(
             modelId=model_id,
             messages=messages,
-            inferenceConfig=inference_config,
-            additionalModelRequestFields=additional_model_fields
+            inferenceConfig=inference_config
         )
     # Log token usage.
     logger.info(response['output']['message'])
