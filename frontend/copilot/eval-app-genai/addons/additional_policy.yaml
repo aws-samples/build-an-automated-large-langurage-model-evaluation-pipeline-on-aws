@@ -1,0 +1,25 @@
+# Your additional_policy.yml
+Parameters:
+    App:
+        Type: String
+    Env:
+        Type: String
+    Name:
+        Type: String
+
+Resources:
+  MyPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AccessBedrock
+            Effect: Allow
+            Action: 
+              - bedrock:*
+            Resource: "*"
+Outputs:
+  MyPolicyArn: # Result: "MyPolicy" will be added to the task role, granting it access to the said services.
+    Description: "The ARN of the ManagedPolicy to attach to the task role."
+    Value: !Ref MyPolicy
