@@ -129,6 +129,9 @@ Combine Steps into an AWS Step Functions State Machine: Orchestrate the entire e
 Add the New State Machine as a branch of the existing evaluation-llm state machine: Integrate the newly created state machine into the current evaluation infrastructure by adding it as a branch. This ensures seamless operation alongside existing evaluation processes and allows for shared resources and consistent data flow. Then add the new metrics to the UI to allow users to select the availabel metrics.
 Update and Test the Integrated Workflow: After integration, thoroughly test the updated state machine to verify that all components function correctly. Ensure that the new branch executes as intended and that it interacts properly with the existing evaluation mechanisms.
 
+You can see an example evaluation workflow shown below with a new branch using the llmeter python package to perform benchmarking of the LLM for latency and throughput.
+<img src="Assets/stepfunction-newbranch2.png" alt="llm-metric-eval" style="width:500px;"/>
+
 ## Security
 
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
