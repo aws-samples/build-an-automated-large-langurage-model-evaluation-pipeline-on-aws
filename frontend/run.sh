@@ -18,7 +18,7 @@ case $input in
         ;;
     deploy)
         echo "Deploying the app. This might take a few minutes..."
-        copilot app init && copilot deploy
+        copilot app init eval-genai-app && copilot env init --name test --profile default --default-config && copilot env deploy --name test &&  copilot deploy
         ;;
     *)
         echo "Invalid argument. Please use build, local or deploy."
