@@ -27,12 +27,12 @@ Below is the solution architecture diagram of this LLM auto eval pipeline soluti
 
 Some of the key components are detailed as below:
 
-- **LLM API service**: This component is responsible for invoking LLMs. In theory, it can handle any LLM regardless of the provider. It also unifies the request and response format. This way, a data scientist for example, does not need to know what specific format an LLM requires to invoke it. This service uses Amazon DynamoDB to store model’s metadata, therefore adding or removing LLMs can be done at runtime.
-- **Prompt Service**: A DynamoDB database, used to store LLM prompt templates for various LLM agents. It is useful to control versioning and have ability to include template parameters that can be supplied at runtime making it suitable for various tasks.
+- **LLM service**: This component is responsible for invoking LLMs. In theory, it can handle any LLM regardless of the provider. It also unifies the request and response format. This way, a data scientist for example, does not need to know what specific format an LLM requires to invoke it. Amazon Bedrock can be seen as an easy to implement LLM service, as it provide the [Converse API](https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html) that provides a consistent API, which works with all Amazon Bedrock models that support messages.
+- **Prompt Service**: This Prompt service is used to store LLM prompt templates for various LLM agents. It is useful to control versioning and have ability to include template parameters that can be supplied at runtime making it suitable for various tasks. In this example, we are using the [Bedrock prompt management](https://aws.amazon.com/bedrock/prompt-management/) service.
 - **LLM Invocation workflow**: Using Amazon Step function, we define a workflow that starts by formulating a prompt from our test dataset. Then invoking each record and saving results to s3.
 - **LLM evaluation workflow**: Also using Amazon Step function, we define a workflow that starts by pulling the results from the previous workflow. Then evaluating each result based on the requested evaluation metrics.
-- **Eval Factory**: It is a service that is responsible to evaluate LLM generation. It handles different methods of evaluation from using LLM to evaluation LLMs or using pre-defined LLM eval metrics.
-- **Result store**: This is an optional component that you can add to show the results. It can use a visualization dashboard or simply use s3 to store raw output.
+- **Eval Factory**: It is a service that is responsible to evaluate LLM generation. It handles different methods of evaluation from using LLM to evaluation LLMs or using pre-defined LLM eval metrics. You can continously add new eval metrics/frameworks as a new branch in the step function as the GenAI use case evolves.
+- **Result store**: This is an optional component that you can add to show the results. It can use a visualization dashboard or simply use S3 to store raw output. In this example, we use Athena to visualise the eval results stored on S3.
 
 We have separated the LLM invocation and LLM evaluation to two workflows, this provides the flexibility to the users that they can choose to just perform batch LLM invocation or LLM evaluaiton with existing LLM generated outputs. 
 
@@ -81,7 +81,7 @@ The pipeline execution has two parallel branches:
 > -	The MetricsEval branch uses the opensource FMEval library to compute metrics like Factual accuracy, QAAccuracy, and Toxicity. This branch uses a Map state with one execution for a SageMaker processing job per metric across all questions.
 > -	The LLMEval branch uses the LLM as a judge to evaluate metrics like answer cosine similarity, redundancy, and compactness, etc. This uses a Step Functions Map to process each question and compute its metrics.
 
-<img src="Assets/LLM-eval-pipeline.png" alt="llm-eval-llm" style="width:500px;"/>
+<img src="Assets/stepfunction-pipeline.png" alt="llm-eval-llm" style="width:500px;"/>
 
 The pipeline may take a few minutes or more depending on the number of evaluation questions. For the SageMaker processing job’s evaluation output, the outputs are saved to S3 as json file. For the customized LLM evaluation branch, the output is saved as s3 objects as well as an Athena table. Below are the example results for the two branches.
 
